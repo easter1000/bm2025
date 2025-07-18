@@ -1,0 +1,7 @@
+# 바이너리 파일은 변환하지 않도록
+Assets/Plugins/**/*.dll   binary
+Assets/Plugins/**/*.so    binary
+Assets/Plugins/**/*.dylib binary
+
+# Unity .meta 파일은 LF 유지
+*.meta text eol=lf
