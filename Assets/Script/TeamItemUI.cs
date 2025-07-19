@@ -73,6 +73,29 @@ public class TeamItemUI : MonoBehaviour
         // -------------- Bench Players --------------
         if (benchContent != null)
         {
+            // 레이아웃 그룹 & 컨텐츠 사이즈 피터 설정 (없으면 추가)
+            var vlg = benchContent.GetComponent<UnityEngine.UI.VerticalLayoutGroup>();
+            if (vlg == null) vlg = benchContent.gameObject.AddComponent<UnityEngine.UI.VerticalLayoutGroup>();
+            vlg.childForceExpandHeight = false;
+            vlg.childForceExpandWidth = false;
+            vlg.childControlHeight = true;
+            vlg.childControlWidth = true;
+            vlg.childAlignment = TextAnchor.UpperCenter;
+            vlg.spacing = 0f;
+
+            var fitter = benchContent.GetComponent<UnityEngine.UI.ContentSizeFitter>();
+            if (fitter == null) fitter = benchContent.gameObject.AddComponent<UnityEngine.UI.ContentSizeFitter>();
+            fitter.verticalFit = UnityEngine.UI.ContentSizeFitter.FitMode.PreferredSize;
+            fitter.horizontalFit = UnityEngine.UI.ContentSizeFitter.FitMode.PreferredSize;
+
+            // anchor/pivot을 상단 중앙으로
+            var benchRT = benchContent;
+            benchRT.anchorMin = new Vector2(0.5f, 1f);
+            benchRT.anchorMax = new Vector2(0.5f, 1f);
+            benchRT.pivot = new Vector2(0.5f, 1f);
+            benchRT.anchoredPosition = Vector2.zero;
+
+            // 기존 자식 제거
             foreach (Transform child in benchContent)
             {
                 Destroy(child.gameObject);
@@ -82,8 +105,20 @@ public class TeamItemUI : MonoBehaviour
             for (int i = 0; i < benchPlayers.Count; i++)
             {
                 var plInstance = Instantiate(benchPlayerPrefab.gameObject, benchContent);
+                plInstance.transform.localScale = Vector3.one;
                 var plc = plInstance.GetComponent<PlayerLineController>();
                 if (plc == null) continue;
+
+                // LayoutElement 설정하여 높이 60, 너비 자동
+                var le = plInstance.GetComponent<UnityEngine.UI.LayoutElement>();
+                if (le == null) le = plInstance.AddComponent<UnityEngine.UI.LayoutElement>();
+                le.preferredHeight = 60f;
+                le.minHeight = 60f;
+                le.flexibleHeight = 0f;
+
+                le.preferredWidth = 842f;
+                le.minWidth = 842f;
+                le.flexibleWidth = 0f;
 
                 Color bgColor = (i % 2 == 0) ? RowColorB : RowColorC;
                 plc.SetPlayerLine(benchPlayers[i], bgColor);
