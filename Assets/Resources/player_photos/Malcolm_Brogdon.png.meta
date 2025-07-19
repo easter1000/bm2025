@@ -1,0 +1,494 @@
+fileFormatVersion: 2
+guid: 607dfad8ea2294c4fa1dd8d7b1f6d926
+TextureImporter:
+  internalIDToNameTable:
+  - first:
+      213: -8242586048320453574
+    second: Malcolm_Brogdon_0
+  - first:
+      213: 7360813292085840115
+    second: Malcolm_Brogdon_1
+  - first:
+      213: 7711763677691349234
+    second: Malcolm_Brogdon_2
+  - first:
+      213: -6268293022107134405
+    second: Malcolm_Brogdon_3
+  - first:
+      213: -5311494573176706646
+    second: Malcolm_Brogdon_4
+  - first:
+      213: -4607668726877170738
+    second: Malcolm_Brogdon_5
+  - first:
+      213: 3168356122275203062
+    second: Malcolm_Brogdon_6
+  - first:
+      213: 2817117998688931626
+    second: Malcolm_Brogdon_7
+  - first:
+      213: -7169139155263980211
+    second: Malcolm_Brogdon_8
+  - first:
+      213: -7709744313996962618
+    second: Malcolm_Brogdon_9
+  - first:
+      213: 8265001706507545152
+    second: Malcolm_Brogdon_10
+  - first:
+      213: -4786470743598897516
+    second: Malcolm_Brogdon_11
+  - first:
+      213: -5773344163703156219
+    second: Malcolm_Brogdon_12
+  - first:
+      213: -2155976508020422198
+    second: Malcolm_Brogdon_13
+  externalObjects: {}
+  serializedVersion: 13
+  mipmaps:
+    mipMapMode: 0
+    enableMipMap: 0
+    sRGBTexture: 1
+    linearTexture: 0
+    fadeOut: 0
+    borderMipMap: 0
+    mipMapsPreserveCoverage: 0
+    alphaTestReferenceValue: 0.5
+    mipMapFadeDistanceStart: 1
+    mipMapFadeDistanceEnd: 3
+  bumpmap:
+    convertToNormalMap: 0
+    externalNormalMap: 0
+    heightScale: 0.25
+    normalMapFilter: 0
+    flipGreenChannel: 0
+  isReadable: 0
+  streamingMipmaps: 0
+  streamingMipmapsPriority: 0
+  vTOnly: 0
+  ignoreMipmapLimit: 0
+  grayScaleToAlpha: 0
+  generateCubemap: 6
+  cubemapConvolution: 0
+  seamlessCubemap: 0
+  textureFormat: 1
+  maxTextureSize: 2048
+  textureSettings:
+    serializedVersion: 2
+    filterMode: 1
+    aniso: 1
+    mipBias: 0
+    wrapU: 1
+    wrapV: 1
+    wrapW: 1
+  nPOTScale: 0
+  lightmap: 0
+  compressionQuality: 50
+  spriteMode: 2
+  spriteExtrude: 1
+  spriteMeshType: 1
+  alignment: 0
+  spritePivot: {x: 0.5, y: 0.5}
+  spritePixelsToUnits: 100
+  spriteBorder: {x: 0, y: 0, z: 0, w: 0}
+  spriteGenerateFallbackPhysicsShape: 1
+  alphaUsage: 1
+  alphaIsTransparency: 1
+  spriteTessellationDetail: -1
+  textureType: 8
+  textureShape: 1
+  singleChannelComponent: 0
+  flipbookRows: 1
+  flipbookColumns: 1
+  maxTextureSizeSet: 0
+  compressionQualitySet: 0
+  textureFormatSet: 0
+  ignorePngGamma: 0
+  applyGammaDecoding: 0
+  swizzle: 50462976
+  cookieLightType: 0
+  platformSettings:
+  - serializedVersion: 4
+    buildTarget: DefaultTexturePlatform
+    maxTextureSize: 2048
+    resizeAlgorithm: 0
+    textureFormat: -1
+    textureCompression: 1
+    compressionQuality: 50
+    crunchedCompression: 0
+    allowsAlphaSplitting: 0
+    overridden: 0
+    ignorePlatformSupport: 0
+    androidETC2FallbackOverride: 0
+    forceMaximumCompressionQuality_BC6H_BC7: 0
+  - serializedVersion: 4
+    buildTarget: Standalone
+    maxTextureSize: 2048
+    resizeAlgorithm: 0
+    textureFormat: -1
+    textureCompression: 1
+    compressionQuality: 50
+    crunchedCompression: 0
+    allowsAlphaSplitting: 0
+    overridden: 0
+    ignorePlatformSupport: 0
+    androidETC2FallbackOverride: 0
+    forceMaximumCompressionQuality_BC6H_BC7: 0
+  - serializedVersion: 4
+    buildTarget: WebGL
+    maxTextureSize: 2048
+    resizeAlgorithm: 0
+    textureFormat: -1
+    textureCompression: 1
+    compressionQuality: 50
+    crunchedCompression: 0
+    allowsAlphaSplitting: 0
+    overridden: 0
+    ignorePlatformSupport: 0
+    androidETC2FallbackOverride: 0
+    forceMaximumCompressionQuality_BC6H_BC7: 0
+  spriteSheet:
+    serializedVersion: 2
+    sprites:
+    - serializedVersion: 2
+      name: Malcolm_Brogdon_0
+      rect:
+        serializedVersion: 2
+        x: 0
+        y: 0
+        width: 1040
+        height: 760
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: a34c44ff8a37c9d80800000000000000
+      internalID: -8242586048320453574
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Malcolm_Brogdon_1
+      rect:
+        serializedVersion: 2
+        x: 1030
+        y: 727
+        width: 10
+        height: 20
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 3f800cc90bcd62660800000000000000
+      internalID: 7360813292085840115
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Malcolm_Brogdon_2
+      rect:
+        serializedVersion: 2
+        x: 1023
+        y: 696
+        width: 10
+        height: 9
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 2f88d88c430b50b60800000000000000
+      internalID: 7711763677691349234
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Malcolm_Brogdon_3
+      rect:
+        serializedVersion: 2
+        x: 1030
+        y: 689
+        width: 8
+        height: 8
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: b369e3d05bc8209a0800000000000000
+      internalID: -6268293022107134405
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Malcolm_Brogdon_4
+      rect:
+        serializedVersion: 2
+        x: 1027
+        y: 664
+        width: 13
+        height: 21
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: aa92363c3d7c946b0800000000000000
+      internalID: -5311494573176706646
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Malcolm_Brogdon_5
+      rect:
+        serializedVersion: 2
+        x: 1033
+        y: 685
+        width: 7
+        height: 6
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: ec35fc394b54e00c0800000000000000
+      internalID: -4607668726877170738
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Malcolm_Brogdon_6
+      rect:
+        serializedVersion: 2
+        x: 1010
+        y: 642
+        width: 21
+        height: 31
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 6f7c5264b1348fb20800000000000000
+      internalID: 3168356122275203062
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Malcolm_Brogdon_7
+      rect:
+        serializedVersion: 2
+        x: 1023
+        y: 668
+        width: 6
+        height: 10
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: a2f8632e4e9681720800000000000000
+      internalID: 2817117998688931626
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Malcolm_Brogdon_8
+      rect:
+        serializedVersion: 2
+        x: 1000
+        y: 587
+        width: 40
+        height: 78
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: d4d75290ce9128c90800000000000000
+      internalID: -7169139155263980211
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Malcolm_Brogdon_9
+      rect:
+        serializedVersion: 2
+        x: 1013
+        y: 559
+        width: 27
+        height: 45
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 6c49f17f46c710590800000000000000
+      internalID: -7709744313996962618
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Malcolm_Brogdon_10
+      rect:
+        serializedVersion: 2
+        x: 1005
+        y: 551
+        width: 25
+        height: 19
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 04a2160234f23b270800000000000000
+      internalID: 8265001706507545152
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Malcolm_Brogdon_11
+      rect:
+        serializedVersion: 2
+        x: 1014
+        y: 545
+        width: 20
+        height: 15
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 496ecffe73a039db0800000000000000
+      internalID: -4786470743598897516
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Malcolm_Brogdon_12
+      rect:
+        serializedVersion: 2
+        x: 1030
+        y: 544
+        width: 10
+        height: 17
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 50216645216f0efa0800000000000000
+      internalID: -5773344163703156219
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Malcolm_Brogdon_13
+      rect:
+        serializedVersion: 2
+        x: 1011
+        y: 516
+        width: 29
+        height: 32
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: ac90b5fe9ce6412e0800000000000000
+      internalID: -2155976508020422198
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    outline: []
+    customData: 
+    physicsShape: []
+    bones: []
+    spriteID: 
+    internalID: 0
+    vertices: []
+    indices: 
+    edges: []
+    weights: []
+    secondaryTextures: []
+    spriteCustomMetadata:
+      entries: []
+    nameFileIdTable:
+      Malcolm_Brogdon_0: -8242586048320453574
+      Malcolm_Brogdon_1: 7360813292085840115
+      Malcolm_Brogdon_10: 8265001706507545152
+      Malcolm_Brogdon_11: -4786470743598897516
+      Malcolm_Brogdon_12: -5773344163703156219
+      Malcolm_Brogdon_13: -2155976508020422198
+      Malcolm_Brogdon_2: 7711763677691349234
+      Malcolm_Brogdon_3: -6268293022107134405
+      Malcolm_Brogdon_4: -5311494573176706646
+      Malcolm_Brogdon_5: -4607668726877170738
+      Malcolm_Brogdon_6: 3168356122275203062
+      Malcolm_Brogdon_7: 2817117998688931626
+      Malcolm_Brogdon_8: -7169139155263980211
+      Malcolm_Brogdon_9: -7709744313996962618
+  mipmapLimitGroupName: 
+  pSDRemoveMatte: 0
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
