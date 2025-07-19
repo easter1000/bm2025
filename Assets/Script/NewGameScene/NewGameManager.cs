@@ -5,6 +5,7 @@ using UnityEngine.SceneManagement;
 using TMPro;
 using System.Linq; // 추가: 팀 정렬에 사용
 using System.Collections; // 추가: 코루틴 사용
+using madcamp3.Assets.Script.Player;
 
 public class NewGameManager : MonoBehaviour
 {
@@ -34,7 +35,7 @@ public class NewGameManager : MonoBehaviour
     [Header("Team Selection")]
     public Transform teamListContent; // ScrollView의 Content
     public GameObject teamItemPrefab;
-    public TeamDetailUI teamDetailUI;
+    // TeamDetailUI removed
     public Button teamSelectConfirmButton;
 
     [Header("Team Intro")]
@@ -165,13 +166,13 @@ public class NewGameManager : MonoBehaviour
 
     private void PopulateTeamList()
     {
-        // 1) 순위 기준으로 정렬
-        teams = teams.OrderBy(t => t.currentRank).ToList();
-
+        // 더 이상 순위로 정렬하지 않고, 생성된 순서대로 사용합니다.
         foreach (Transform child in teamListContent) Destroy(child.gameObject);
         foreach (var team in teams)
         {
-            var item = Instantiate(teamItemPrefab, teamListContent).GetComponent<TeamItemUI>();
+            GameObject obj = Instantiate(teamItemPrefab, teamListContent);
+            TeamItemUI item = obj.GetComponent<TeamItemUI>();
+
             item.Init(team, OnTeamItemClicked);
         }
 
@@ -194,7 +195,6 @@ public class NewGameManager : MonoBehaviour
 
         teamSelectConfirmButton.interactable = false;
         selectedTeam = null;
-        teamDetailUI.Hide();
 
         // Content 크기 및 셀 크기를 Viewport 비율에 맞춰 조정
         UpdateTeamListContentWidth();
@@ -231,8 +231,8 @@ public class NewGameManager : MonoBehaviour
         float targetCellWidth = grid.cellSize.x;
         float targetCellHeight = grid.cellSize.y;
 
-        // 좌우 패딩 = (Viewport - 셀) / 2  → 첫/마지막 카드가 중앙에 딱 맞게
-        int sidePadding = Mathf.RoundToInt((viewport.rect.width - targetCellWidth) / 2f);
+        // Viewport가 셀보다 작을 때 음수 패딩이 되지 않도록 Clamp
+        int sidePadding = Mathf.RoundToInt(Mathf.Max(0f, (viewport.rect.width - targetCellWidth) / 2f));
         grid.padding.left = sidePadding;
         grid.padding.right = sidePadding;
 
@@ -252,7 +252,6 @@ public class NewGameManager : MonoBehaviour
     private void OnTeamItemClicked(TeamData data)
     {
         selectedTeam = data;
-        teamDetailUI.Show(data);
         teamSelectConfirmButton.interactable = true;
     }
 
@@ -302,39 +301,56 @@ public class NewGameManager : MonoBehaviour
     {
         teams.Clear();
 
-        // 1) 450명 선수 풀 생성 후 셔플
-        List<string> playerPool = Enumerable.Range(1, 450)
-            .Select(n => $"선수{n}")
-            .OrderBy(_ => Random.value)
-            .ToList();
+        // 포지션 목록 (농구)
+        string[] positions = { "PG", "SG", "SF", "PF", "C" };
 
-        int playersPerTeam = playerPool.Count / 30; // 15명
+        // 랜덤 이름 풀 (간단히 숫자)
+        int globalPlayerIndex = 1;
 
-        // 2) 1~30위 순위를 랜덤 섞기
-        List<int> shuffledRanks = Enumerable.Range(1, 30)
-            .OrderBy(_ => Random.value)
-            .ToList();
+        System.Random sysRand = new System.Random();
 
-        // 3) 0.1~0.9 사이 승률 30개 랜덤 생성 후 내림차순 정렬 (높은 값이 1위)
-        List<float> winRates = new List<float>();
-        for (int i = 0; i < 30; i++) winRates.Add(Random.Range(0.1f, 0.9f));
-        winRates.Sort((a, b) => b.CompareTo(a)); // 내림차순
-
-        // 4) 팀 1~30 생성
-        for (int i = 0; i < 30; i++)
+        for (int teamIndex = 0; teamIndex < 30; teamIndex++)
         {
-            // 선수 배정 (중복X)
-            string[] players = playerPool.Skip(i * playersPerTeam).Take(playersPerTeam).ToArray();
+            // 팀명 및 줄임말
+            string teamName = $"팀 {teamIndex + 1}";
+            string abbreviation = string.Concat(Enumerable.Range(0, 3).Select(_ => (char)sysRand.Next('A', 'Z' + 1)));
 
-            int rank = shuffledRanks[i];
-            float winRate = winRates[rank - 1]; // 1위 = index 0 => 최대 승률
+            List<PlayerLine> playerLines = new List<PlayerLine>();
 
-            teams.Add(new TeamData(
-                i + 1,
-                $"팀 {i + 1}",
-                players,
-                rank,
-                winRate));
+            // 15명 생성 (0-4 주전, 5-14 예비)
+            for (int i = 0; i < 15; i++)
+            {
+                PlayerLine p = new PlayerLine();
+
+                // 고유 이름 생성
+                p.PlayerName = $"선수{globalPlayerIndex++}";
+
+                // 기본 랜덤 값들
+                p.BackNumber = UnityEngine.Random.Range(0, 100); // 0~99
+                p.Position = positions[UnityEngine.Random.Range(0, positions.Length)];
+                p.Age = UnityEngine.Random.Range(19, 41); // 19~40세
+
+                // 키 (feet-inches 형식 "6-5")
+                int foot = UnityEngine.Random.Range(5, 8); // 5~7피트
+                int inch = UnityEngine.Random.Range(0, 12); // 0~11인치
+                p.Height = $"{foot}-{inch}";
+
+                p.Weight = UnityEngine.Random.Range(150, 301); // 150~300 파운드
+                p.OverallScore = UnityEngine.Random.Range(0, 100);
+                p.Potential = UnityEngine.Random.Range(0, 100);
+
+                // 주전 5명(0~4)은 AssignedPosition 설정 (본인과 다를 수도 있음)
+                if (i < 5)
+                {
+                    p.AssignedPosition = positions[UnityEngine.Random.Range(0, positions.Length)];
+                }
+
+                playerLines.Add(p);
+            }
+
+            TeamData teamData = new TeamData(teamIndex + 1, teamName, abbreviation, playerLines);
+
+            teams.Add(teamData);
         }
     }
 

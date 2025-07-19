@@ -8,11 +8,6 @@ using UnityEngine.UI;
 /// </summary>
 public class DynamicGridCellSize : MonoBehaviour
 {
-    [Tooltip("셀 폭 = 기준 RectTransform.width * widthPercent")] [Range(0.05f, 1f)]
-    [SerializeField] private float widthPercent = 0.7f;
-
-    [Tooltip("셀 높이 = 기준 RectTransform.height * heightPercent")] [Range(0.05f, 1f)]
-    [SerializeField] private float heightPercent = 0.9f;
 
     [Tooltip("크기 계산에 사용할 RectTransform (비워두면 Content 자신을 사용)")]
     [SerializeField] private RectTransform referenceRect;
@@ -57,8 +52,8 @@ public class DynamicGridCellSize : MonoBehaviour
         RectTransform baseRect = referenceRect != null ? referenceRect : selfRect;
         if (baseRect == null) return;
 
-        float newWidth = baseRect.rect.width * widthPercent;
-        float newHeight = baseRect.rect.height * heightPercent;
+        float newWidth = 1350;
+        float newHeight = 900;
         grid.cellSize = new Vector2(newWidth, newHeight);
     }
 

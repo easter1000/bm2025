@@ -1,6 +1,7 @@
 using System;
 using UnityEngine;
 using TMPro;
+using UnityEngine.UI;
 
 namespace madcamp3.Assets.Script.Player
 {
@@ -14,12 +15,13 @@ namespace madcamp3.Assets.Script.Player
         public TextMeshProUGUI WeightText;
         public TextMeshProUGUI OverallScoreText;
         public SliderController PotentialSlider;
+        public Image BackgroundImage;
 
         /// <summary>
         /// 전달된 PlayerLine 데이터를 UI 컴포넌트에 적용합니다.
         /// </summary>
         /// <param name="playerLine">선수 정보</param>
-        public void SetPlayerLine(PlayerLine playerLine)
+        public void SetPlayerLine(PlayerLine playerLine, Color backgroundColor)
         {
             if (playerLine == null)
             {
@@ -38,6 +40,8 @@ namespace madcamp3.Assets.Script.Player
 
             // 슬라이더 잠재력 표시 (0~99)
             if (PotentialSlider) PotentialSlider.SetSliderValue(playerLine.Potential);
+
+            if (BackgroundImage) BackgroundImage.color = backgroundColor;
         }
     }
 }
