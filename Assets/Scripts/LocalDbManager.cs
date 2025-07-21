@@ -157,7 +157,14 @@ public class LocalDbManager : MonoBehaviour
             _db.Update(teamFinance);
         }
     }
-    
+    public List<Schedule> GetScheduleForTeam(string teamAbbr, int season)
+    {
+        // 특정 팀의 한 시즌 전체 경기 일정을 가져옵니다.
+        return _db.Table<Schedule>()
+                .Where(g => (g.HomeTeamAbbr == teamAbbr || g.AwayTeamAbbr == teamAbbr) && g.Season == season)
+                .OrderBy(g => g.GameDate)
+                .ToList();
+    }
     // --- Player ---
     public PlayerRating GetPlayerRating(int playerId) => _db.Find<PlayerRating>(playerId);
     public List<PlayerRating> GetAllPlayerRatings() => _db.Table<PlayerRating>().ToList();
