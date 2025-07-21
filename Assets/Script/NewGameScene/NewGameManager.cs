@@ -6,6 +6,7 @@ using TMPro;
 using System.Linq; // 추가: 팀 정렬에 사용
 using System.Collections; // 추가: 코루틴 사용
 using System.Reflection; // LocalDbManager private method 호출용
+using System; // 날짜 처리 및 User 저장용
 using madcamp3.Assets.Script.Player;
 
 public class NewGameManager : MonoBehaviour
@@ -274,10 +275,8 @@ public class NewGameManager : MonoBehaviour
 
     private void PlayTeamIntro()
     {
-        // 팀 관련 나레이션 예시
         string intro = $"{selectedTeam.teamName}의 새로운 감독이 된 당신! 선수들과 함께 우승을 향해 나아가세요.";
         teamIntroTyper.Play(intro, ShowTeamIntroContinue);
-        // TODO: teamIntroImage.sprite = ... 팀별 이미지 설정
     }
 
     private void ShowPrologueContinue()
@@ -290,19 +289,37 @@ public class NewGameManager : MonoBehaviour
 
     private void ShowTeamIntroContinue()
     {
-        if (!teamIntroContinueButton) { SceneManager.LoadScene(gameSceneName); return; }
+        if (!teamIntroContinueButton) { SaveUserData(); SceneManager.LoadScene(gameSceneName); return; }
         teamIntroContinueButton.gameObject.SetActive(true);
         teamIntroContinueButton.onClick.RemoveAllListeners();
-        teamIntroContinueButton.onClick.AddListener(() => SceneManager.LoadScene(gameSceneName));
+        teamIntroContinueButton.onClick.AddListener(() => {
+            SaveUserData();
+            SceneManager.LoadScene(gameSceneName);
+        });
     }
 
     #endregion
+
+    // --- NEW: Save user information to the local database ---
+    private void SaveUserData()
+    {
+        if (selectedTeam == null)
+        {
+            Debug.LogWarning("[NewGameManager] SaveUserData called but selectedTeam is null.");
+            return;
+        }
+
+        string coachName = coachNameInputField != null ? coachNameInputField.text : string.Empty;
+        string teamAbbr = selectedTeam.abbreviation;
+        int season = 2025;
+
+        LocalDbManager.Instance.SaveOrUpdateUser(coachName, teamAbbr, season);
+    }
 
     #region Dummy Data
 
     private void InitDummyTeams()
     {
-        // 실제 DB에서 팀/선수 정보를 불러옵니다.
         teams.Clear();
 
         var teamEntities = LocalDbManager.Instance.GetAllTeams();
