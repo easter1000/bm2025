@@ -38,5 +38,10 @@ public class GradientBackground : MonoBehaviour
         texture.Apply();
 
         image.sprite = Sprite.Create(texture, new Rect(0, 0, width, height), new Vector2(0.5f, 0.5f));
+
+        // Image.color 값이 스프라이트 색상에 곱해져 그라데이션 색이 변질되는 문제 방지
+        // 알파(투명도)만 유지하고 RGB는 1,1,1로 고정하여 실질적으로 색상 영향이 없도록 한다.
+        Color orig = image.color;
+        image.color = new Color(1f, 1f, 1f, orig.a);
     }
 }

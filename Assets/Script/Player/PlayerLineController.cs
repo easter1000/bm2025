@@ -38,7 +38,7 @@ namespace madcamp3.Assets.Script.Player
 
             // 텍스트 필드 갱신
             if (PositionText) PositionText.text = playerLine.Position;
-            if (BackNumberText) BackNumberText.text = playerLine.BackNumber.ToString();
+            if (BackNumberText) BackNumberText.text = playerLine.BackNumber;
             if (PlayerNameText) PlayerNameText.text = playerLine.PlayerName;
             if (AgeText) AgeText.text = playerLine.Age.ToString();
             if (heightText) heightText.text = playerLine.Height;

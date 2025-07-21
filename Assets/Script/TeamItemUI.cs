@@ -2,6 +2,7 @@ using UnityEngine;
 using UnityEngine.UI;
 using System;
 using System.Linq;
+using System.Collections.Generic;
 using TMPro;
 using madcamp3.Assets.Script.Player;
 
@@ -10,6 +11,9 @@ public class TeamItemUI : MonoBehaviour
     [Header("Texts")]
     [SerializeField] private TextMeshProUGUI txtTeamName;
     [SerializeField] private TextMeshProUGUI txtAbbreviation;
+
+    [Header("Logo")]
+    [SerializeField] private Image imgTeamLogo;
 
     [Header("Starting Players (5)")]
     [SerializeField] private PlayerLineController pgPlayer;
@@ -48,8 +52,35 @@ public class TeamItemUI : MonoBehaviour
         if (txtTeamName) txtTeamName.text = data.teamName;
         if (txtAbbreviation) txtAbbreviation.text = data.abbreviation;
 
+        // 팀 로고 로드
+        if (imgTeamLogo != null)
+        {
+            Sprite logo = Resources.Load<Sprite>($"team_photos/{data.abbreviation}");
+            if (logo == null)
+            {
+                logo = Resources.Load<Sprite>("team_photos/default_logo");
+            }
+            imgTeamLogo.sprite = logo;
+            imgTeamLogo.preserveAspect = true;
+        }
+
         // -------------- Starting Players --------------
-        var starters = data.playerLines.Take(5).ToList();
+        // DB에서 해당 팀 엔티티를 가져와 best_five(주전 5명 ID 목록)를 이용한다.
+        HashSet<int> starterIds = new HashSet<int>();
+
+        var teamEntity = LocalDbManager.Instance.GetTeam(data.abbreviation);
+        if (teamEntity != null && !string.IsNullOrEmpty(teamEntity.best_five))
+        {
+            foreach (string idStr in teamEntity.best_five.Split(','))
+            {
+                if (int.TryParse(idStr, out int pid)) starterIds.Add(pid);
+            }
+        }
+
+        // starterIds가 비어있으면 기존 로직과 동일하게 상위 5명(정렬된 playerLines) 사용
+        var starters = starterIds.Count > 0
+            ? data.playerLines.Where(pl => starterIds.Contains(pl.PlayerId)).Take(5).ToList()
+            : data.playerLines.Take(5).ToList();
 
         // ---- Team Average 계산 ----
         if (startingAvgText != null && startingAvgBackground != null)
@@ -180,7 +211,9 @@ public class TeamItemUI : MonoBehaviour
         if (itemButton != null)
         {
             itemButton.onClick.RemoveAllListeners();
-            itemButton.onClick.AddListener(() => onClickCallback?.Invoke(teamData));
+            itemButton.onClick.AddListener(() => {
+                onClickCallback?.Invoke(teamData);
+            });
         }
 
         // 초기 상세 정보: 첫 번째 주전 선수를 표시

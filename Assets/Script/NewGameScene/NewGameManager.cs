@@ -305,92 +305,87 @@ public class NewGameManager : MonoBehaviour
         // 실제 DB에서 팀/선수 정보를 불러옵니다.
         teams.Clear();
 
-        var ratings = LocalDbManager.Instance.GetAllPlayerRatings();
-        if (ratings == null || ratings.Count == 0)
+        var teamEntities = LocalDbManager.Instance.GetAllTeams();
+        if (teamEntities == null || teamEntities.Count == 0)
         {
-            Debug.LogError("[NewGameManager] 데이터베이스에서 선수 정보를 가져오지 못했습니다.");
+            Debug.LogError("[NewGameManager] Team 테이블을 불러오지 못했습니다.");
             return;
         }
 
-        // 팀별로 그룹화(최소 5명 이상)
-        var teamGroups = ratings.GroupBy(r => r.team)
-                                .Where(g => g.Count() >= 5)
-                                .ToList();
-
-        int teamIdCounter = 1;
-        foreach (var g in teamGroups)
+        foreach (var teamEntity in teamEntities)
         {
-            string abbr = g.Key;
-            string teamName = abbr; // TODO: 필요시 풀네임 매핑
+            string teamName = teamEntity.team_name;
+            string abbr = teamEntity.team_abbv;
 
-            // OVR 순 정렬
-            // LocalDbManager.CalculatePlayerCurrentValue (private) 메서드에 접근하기 위한 준비
-            MethodInfo calcValueMethod = typeof(LocalDbManager).GetMethod("CalculatePlayerCurrentValue", BindingFlags.Instance | BindingFlags.NonPublic);
-            if (calcValueMethod == null)
+            // 모든 선수 목록 로드 (팀 기준)
+            var allPlayers = LocalDbManager.Instance.GetPlayersByTeam(abbr);
+            if (allPlayers == null || allPlayers.Count < 5) continue;
+
+            // best_five 문자열은 PG,SG,SF,PF,C 순서대로 player_id가 쉼표로 구분되어 있습니다.
+            // 각 player_id → AssignedPosition 매핑을 만든 뒤 HashSet 도 함께 준비합니다.
+            Dictionary<int, string> idToAssignedPos = new();
+            HashSet<int> starterIds = new();
+            if (!string.IsNullOrEmpty(teamEntity.best_five))
             {
-                Debug.LogError("[NewGameManager] CalculatePlayerCurrentValue 메서드를 찾을 수 없습니다.");
-                continue;
+                string[] parts = teamEntity.best_five.Split(',');
+                for (int i = 0; i < parts.Length && i < 5; i++)
+                {
+                    if (int.TryParse(parts[i], out int pid))
+                    {
+                        starterIds.Add(pid);
+                        // i (0~4) → position code (1~5)
+                        idToAssignedPos[pid] = PositionCodeToString(i + 1);
+                    }
+                }
             }
 
-            // 각 선수의 가치를 계산한 뒤, 리스트에 저장
-            var playerValueList = new List<(PlayerRating rating, float value)>();
-            foreach (var rating in g)
-            {
-                var status = LocalDbManager.Instance.GetPlayerStatus(rating.player_id);
-                long salary = status?.Salary ?? 0;
-                float value = (float)calcValueMethod.Invoke(LocalDbManager.Instance, new object[] { rating.overallAttribute, rating.age, salary });
-                playerValueList.Add((rating, value));
-            }
+            List<PlayerLine> starters = new List<PlayerLine>();
+            List<PlayerLine> bench = new List<PlayerLine>();
 
-            // 가치 기준 내림차순 정렬
-            var sorted = playerValueList.OrderByDescending(v => v.value).ToList();
-
-            List<PlayerLine> playerLines = new List<PlayerLine>();
-
-            foreach (var (r, value) in sorted)
+            foreach (var pr in allPlayers)
             {
                 PlayerLine pl = new PlayerLine
                 {
-                    PlayerName = r.name,
-                    Position = PositionCodeToString(r.position),
-                    BackNumber = r.backNumber,
-                    Age = r.age,
-                    Height = r.height,
-                    Weight = r.weight,
-                    OverallScore = r.overallAttribute,
-                    Potential = r.potential,
-                    PlayerId = r.player_id,
-                    AssignedPosition = null
+                    PlayerName = pr.name,
+                    Position = PositionCodeToString(pr.position),
+                    BackNumber = pr.backNumber,
+                    Age = pr.age,
+                    Height = pr.height,
+                    Weight = pr.weight,
+                    OverallScore = pr.overallAttribute,
+                    Potential = pr.potential,
+                    PlayerId = pr.player_id,
+                    AssignedPosition = idToAssignedPos.ContainsKey(pr.player_id) ? idToAssignedPos[pr.player_id] : null
                 };
-                playerLines.Add(pl);
-            }
 
-            // 포지션별로 가치가 가장 높은 선수 1명씩을 주전으로 선정
-            var starters = new HashSet<PlayerLine>();
-            foreach (int posCode in Enumerable.Range(1, 5))
-            {
-                string posStr = PositionCodeToString(posCode);
-                var best = playerLines.Where(p => p.Position == posStr)
-                                      .OrderByDescending(p => p.OverallScore) // 동일 포지션 내에서 OVR로 Fallback 정렬
-                                      .FirstOrDefault();
-                if (best != null)
+                if (starterIds.Contains(pr.player_id) && starters.Count < 5)
                 {
-                    best.AssignedPosition = posStr;
-                    starters.Add(best);
-                }
-            }
-
-            // 만약 어떤 포지션이 부족해서 5명이 안 됐다면, 남은 선수 중 가치 순으로 채움
-            if (starters.Count < 5)
-            {
-                foreach (var pl in playerLines.Except(starters).Take(5 - starters.Count))
-                {
-                    pl.AssignedPosition = pl.Position; // 가능한 원 포지션 유지
                     starters.Add(pl);
                 }
+                else
+                {
+                    bench.Add(pl);
+                }
             }
 
-            TeamData teamData = new TeamData(teamIdCounter++, teamName, abbr, playerLines);
+            // Fallback: if starters <5 fill with best bench players
+            if (starters.Count < 5)
+            {
+                var add = bench.OrderByDescending(p => p.OverallScore).Take(5 - starters.Count).ToList();
+                foreach (var pl in add)
+                {
+                    pl.AssignedPosition = pl.Position;
+                    starters.Add(pl);
+                    bench.Remove(pl);
+                }
+            }
+
+            // combine lists starters first then bench
+            List<PlayerLine> playerLines = new List<PlayerLine>();
+            playerLines.AddRange(starters);
+            playerLines.AddRange(bench);
+
+            TeamData teamData = new TeamData(teamEntity.team_id, teamName, abbr, playerLines);
             teams.Add(teamData);
         }
     }
