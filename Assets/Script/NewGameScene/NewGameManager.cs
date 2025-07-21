@@ -289,11 +289,18 @@ public class NewGameManager : MonoBehaviour
 
     private void ShowTeamIntroContinue()
     {
-        if (!teamIntroContinueButton) { SaveUserData(); SceneManager.LoadScene(gameSceneName); return; }
+        if (!teamIntroContinueButton)
+        {
+            SaveUserData();
+            InitializeSeason(2025); // 시즌 시작 전 스케줄 생성
+            SceneManager.LoadScene(gameSceneName);
+            return;
+        }
         teamIntroContinueButton.gameObject.SetActive(true);
         teamIntroContinueButton.onClick.RemoveAllListeners();
         teamIntroContinueButton.onClick.AddListener(() => {
             SaveUserData();
+            InitializeSeason(2025); // 시즌 시작 전 스케줄 생성
             SceneManager.LoadScene(gameSceneName);
         });
     }
@@ -314,6 +321,18 @@ public class NewGameManager : MonoBehaviour
         int season = 2025;
 
         LocalDbManager.Instance.SaveOrUpdateUser(coachName, teamAbbr, season);
+    }
+
+    // 새 시즌을 초기화하고 스케줄을 생성한다.
+    private void InitializeSeason(int season)
+    {
+        SeasonManager sm = SeasonManager.Instance;
+        if (sm == null)
+        {
+            GameObject obj = new GameObject("SeasonManager");
+            sm = obj.AddComponent<SeasonManager>();
+        }
+        sm.StartNewSeason(season);
     }
 
     #region Dummy Data
