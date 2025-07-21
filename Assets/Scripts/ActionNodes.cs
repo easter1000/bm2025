@@ -9,8 +9,7 @@ public class Condition_IsOpenFor3 : ConditionNode
         var adjustedRating = simulator.GetAdjustedRating(player);
 
         float tendency = 25f; 
-        tendency += (player.Rating.overallAttribute - 85) * 0.2f;
-        tendency -= (adjustedRating.passIQ - 75) * 0.15f; 
+        tendency += (player.Rating.overallAttribute - 85) * 0.25f;
 
         bool willTry3Pointer = adjustedRating.threePointShot > 75 && Random.Range(0, 100) < tendency;
         if (willTry3Pointer) return NodeState.SUCCESS;
@@ -26,7 +25,7 @@ public class Condition_CanDrive : ConditionNode
         var adjustedRating = simulator.GetAdjustedRating(player);
 
         float driveTendency = 20 + (adjustedRating.drivingDunk + adjustedRating.layup) / 2.0f * 0.3f;
-        driveTendency += (player.Rating.overallAttribute - 85) * 0.25f;
+        driveTendency += (player.Rating.overallAttribute - 85) * 0.3f;
         if (Random.Range(0, 100) >= driveTendency) return NodeState.FAILURE;
         
         var defender = simulator.GetRandomDefender(player.TeamId);
@@ -49,11 +48,10 @@ public class Condition_IsGoodPassOpportunity : ConditionNode
         
         var bestTeammate = teammates.OrderByDescending(p => p.Rating.overallAttribute).First();
 
-        float passValue = (bestTeammate.Rating.overallAttribute - player.Rating.overallAttribute) * 0.4f;
-        passValue += (player.Rating.passIQ - 80) * 0.3f;
+        float passValue = (bestTeammate.Rating.overallAttribute - player.Rating.overallAttribute) * 0.5f;
+        passValue += (player.Rating.passIQ - 85) * 0.2f;
 
-        // 패스 가치가 일정 수준 이상일 때, 그리고 약간의 랜덤성을 부여하여 패스를 시도
-        if (passValue > Random.Range(2f, 5f))
+        if (passValue > Random.Range(3f, 6f))
         {
             return NodeState.SUCCESS;
         }
@@ -71,8 +69,7 @@ public class Condition_IsGoodForMidRange : ConditionNode
         var adjustedRating = simulator.GetAdjustedRating(player);
         
         float tendency = 34f;
-        tendency += (player.Rating.overallAttribute - 85) * 0.2f;
-        tendency -= (adjustedRating.passIQ - 75) * 0.2f;
+        tendency += (player.Rating.overallAttribute - 85) * 0.25f;
 
         bool willTry = adjustedRating.midRangeShot > 70 && Random.Range(0, 100) < tendency;
         if (willTry)

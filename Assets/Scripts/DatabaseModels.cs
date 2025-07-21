@@ -1,6 +1,6 @@
 using SQLite4Unity3d;
 
-// PlayerRating 클래스는 선수의 핵심 능력치를 정의합니다.
+// PlayerRating 클래스는 선수의 핵심 능력치, 기본 정보, 그리고 현재 가치를 저장합니다.
 [Table("PlayerRating")]
 public class PlayerRating
 {
@@ -8,8 +8,10 @@ public class PlayerRating
     public int player_id { get; set; }
     public string name { get; set; }
     public string team { get; set; }
+    public int age { get; set; }
     public int position { get; set; }
     public int overallAttribute { get; set; }
+    public float currentValue { get; set; } // [추가됨] 선수의 현재 거래 가치
     public int closeShot { get; set; }
     public int midRangeShot { get; set; }
     public int threePointShot { get; set; }
@@ -30,7 +32,7 @@ public class PlayerRating
     public int potential { get; set; }
 }
 
-// PlayerStatus 클래스는 선수의 변하는 상태를 관리합니다.
+// PlayerStatus 클래스는 선수의 변하는 상태와 계약 정보를 관리합니다.
 [Table("PlayerStatus")]
 public class PlayerStatus
 {
@@ -38,13 +40,14 @@ public class PlayerStatus
     [Indexed] public int PlayerId { get; set; }
     public string ContractType { get; set; }
     public int YearsLeft { get; set; }
+    public long Salary { get; set; }
     public int Stamina { get; set; }
     public bool IsInjured { get; set; }
     public int InjuryDaysLeft { get; set; }
     public string LastChecked { get; set; }
 }
 
-// PlayerStat (경기 기록용) - [최종 수정 버전]
+// PlayerStat 클래스는 선수의 경기별 기록을 저장합니다.
 [Table("PlayerStat")]
 public class PlayerStat
 {
@@ -52,28 +55,36 @@ public class PlayerStat
     public int PlayerId { get; set; }
     public int Season { get; set; }
     public int GameNumber { get; set; }
-    
-    // --- 기본 누적 스탯 ---
-    public int MinutesPlayedInSeconds { get; set; }
+    public int MinutesPlayed { get; set; }
     public int Points { get; set; }
     public int Assists { get; set; }
-    public int OffensiveRebounds { get; set; }
-    public int DefensiveRebounds { get; set; }
+    public int Rebounds { get; set; }
     public int Steals { get; set; }
     public int Blocks { get; set; }
     public int Turnovers { get; set; }
-    public int Fouls { get; set; }
-
-    // --- 슛 관련 누적 스탯 ---
-    public int FieldGoalsMade { get; set; }
-    public int FieldGoalsAttempted { get; set; }
-    public int ThreePointersMade { get; set; }
-    public int ThreePointersAttempted { get; set; }
-    public int FreeThrowsMade { get; set; }
-    public int FreeThrowsAttempted { get; set; }
-
-    // --- 특수 스탯 ---
-    public int PlusMinus { get; set; }
-
     public string RecordedAt { get; set; }
+}
+
+// User 테이블: 사용자의 게임 진행 상태와 정보를 저장합니다.
+[Table("User")]
+public class User
+{
+    [PrimaryKey, AutoIncrement] public int Id { get; set; }
+    public string CoachName { get; set; }
+    public string SelectedTeamAbbr { get; set; }
+    public int CurrentSeason { get; set; }
+    public string CurrentDate { get; set; }
+    public string LastSaved { get; set; }
+}
+
+// TeamFinance 테이블: 리그의 모든 팀 재정 정보를 관리합니다.
+[Table("TeamFinance")]
+public class TeamFinance
+{
+    [PrimaryKey] public string TeamAbbr { get; set; }
+    public int Season { get; set; }
+    public long SalaryCap { get; set; }
+    public long LuxuryTaxThreshold { get; set; }
+    public long CurrentTeamSalary { get; set; }
+    public long TeamBudget { get; set; }
 }

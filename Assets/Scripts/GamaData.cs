@@ -10,6 +10,9 @@ public class GamePlayer
     // [신규] 경기 중 실시간으로 변하는 체력 (100이 최대)
     public float CurrentStamina { get; set; } = 100f;
 
+    // [핵심 추가] 선수가 현재 코트 위에 있는지 여부를 명시적으로 추적
+    public bool IsOnCourt { get; set; } = false;
+
     public GamePlayer(PlayerRating rating, int teamId)
     {
         Rating = rating;
