@@ -5,9 +5,6 @@ TextureImporter:
   - first:
       213: 5983720750190554418
     second: orl_0
-  - first:
-      213: 6659709297177756994
-    second: orl_1
   externalObjects: {}
   serializedVersion: 13
   mipmaps:
@@ -49,9 +46,9 @@ TextureImporter:
   nPOTScale: 0
   lightmap: 0
   compressionQuality: 50
-  spriteMode: 2
+  spriteMode: 1
   spriteExtrude: 1
-  spriteMeshType: 1
+  spriteMeshType: 0
   alignment: 0
   spritePivot: {x: 0.5, y: 0.5}
   spritePixelsToUnits: 100
@@ -119,10 +116,10 @@ TextureImporter:
       name: orl_0
       rect:
         serializedVersion: 2
-        x: 19
-        y: 161
-        width: 125
-        height: 117
+        x: 0
+        y: 3
+        width: 1200
+        height: 1008
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
@@ -137,33 +134,11 @@ TextureImporter:
       indices: 
       edges: []
       weights: []
-    - serializedVersion: 2
-      name: orl_1
-      rect:
-        serializedVersion: 2
-        x: 69
-        y: 82
-        width: 413
-        height: 336
-      alignment: 0
-      pivot: {x: 0, y: 0}
-      border: {x: 0, y: 0, z: 0, w: 0}
-      customData: 
-      outline: []
-      physicsShape: []
-      tessellationDetail: -1
-      bones: []
-      spriteID: 24585a5325a0c6c50800000000000000
-      internalID: 6659709297177756994
-      vertices: []
-      indices: 
-      edges: []
-      weights: []
     outline: []
     customData: 
     physicsShape: []
     bones: []
-    spriteID: 
+    spriteID: 5e97eb03825dee720800000000000000
     internalID: 0
     vertices: []
     indices: 
@@ -174,7 +149,6 @@ TextureImporter:
       entries: []
     nameFileIdTable:
       orl_0: 5983720750190554418
-      orl_1: 6659709297177756994
   mipmapLimitGroupName: 
   pSDRemoveMatte: 0
   userData: 

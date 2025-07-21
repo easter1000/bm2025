@@ -172,10 +172,10 @@ public class LocalDbManager : MonoBehaviour
 
         // --- 3. 팀 재정 데이터 처리 ---
         var teamFinances = new List<TeamFinance>();
-        long currentSeasonSalaryCap = 141000000; long currentSeasonLuxuryTax = 171315000;
+        long currentSeasonSalaryCap = 141000000;
         foreach (var teamSalaryPair in teamSalaries)
         {
-            teamFinances.Add(new TeamFinance { TeamAbbr = teamSalaryPair.Key, Season = 2025, Wins = 0, Losses = 0, SalaryCap = currentSeasonSalaryCap, LuxuryTaxThreshold = currentSeasonLuxuryTax, CurrentTeamSalary = teamSalaryPair.Value, TeamBudget = 200000000 });
+            teamFinances.Add(new TeamFinance { TeamAbbr = teamSalaryPair.Key, Season = 2025, Wins = 0, Losses = 0, SalaryCap = currentSeasonSalaryCap, CurrentTeamSalary = teamSalaryPair.Value, TeamBudget = 200000000 });
         }
         _db.InsertAll(teamFinances);
         Debug.Log($"[DB] Populated TeamFinance for {teamFinances.Count} teams.");

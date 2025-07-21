@@ -5,42 +5,6 @@ TextureImporter:
   - first:
       213: -8821356396277160467
     second: phi_0
-  - first:
-      213: 7186940955769485026
-    second: phi_1
-  - first:
-      213: 4961524969992139407
-    second: phi_2
-  - first:
-      213: -1197929541418917987
-    second: phi_3
-  - first:
-      213: 2449273804515101604
-    second: phi_4
-  - first:
-      213: 6424933758061680778
-    second: phi_5
-  - first:
-      213: 2678325203049008058
-    second: phi_6
-  - first:
-      213: -8330663871913075240
-    second: phi_7
-  - first:
-      213: 7974377665484686489
-    second: phi_8
-  - first:
-      213: 8242309889329069174
-    second: phi_9
-  - first:
-      213: 572139049254488249
-    second: phi_10
-  - first:
-      213: 739853717070556767
-    second: phi_11
-  - first:
-      213: -1256288640287214550
-    second: phi_12
   externalObjects: {}
   serializedVersion: 13
   mipmaps:
@@ -82,9 +46,9 @@ TextureImporter:
   nPOTScale: 0
   lightmap: 0
   compressionQuality: 50
-  spriteMode: 2
+  spriteMode: 1
   spriteExtrude: 1
-  spriteMeshType: 1
+  spriteMeshType: 0
   alignment: 0
   spritePivot: {x: 0.5, y: 0.5}
   spritePixelsToUnits: 100
@@ -152,10 +116,10 @@ TextureImporter:
       name: phi_0
       rect:
         serializedVersion: 2
-        x: 109
-        y: 440
-        width: 33
-        height: 32
+        x: 0
+        y: 0
+        width: 1200
+        height: 1200
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
@@ -170,275 +134,11 @@ TextureImporter:
       indices: 
       edges: []
       weights: []
-    - serializedVersion: 2
-      name: phi_1
-      rect:
-        serializedVersion: 2
-        x: 151
-        y: 449
-        width: 34
-        height: 32
-      alignment: 0
-      pivot: {x: 0, y: 0}
-      border: {x: 0, y: 0, z: 0, w: 0}
-      customData: 
-      outline: []
-      physicsShape: []
-      tessellationDetail: -1
-      bones: []
-      spriteID: 2e6b852a8b42db360800000000000000
-      internalID: 7186940955769485026
-      vertices: []
-      indices: 
-      edges: []
-      weights: []
-    - serializedVersion: 2
-      name: phi_2
-      rect:
-        serializedVersion: 2
-        x: 191
-        y: 440
-        width: 34
-        height: 32
-      alignment: 0
-      pivot: {x: 0, y: 0}
-      border: {x: 0, y: 0, z: 0, w: 0}
-      customData: 
-      outline: []
-      physicsShape: []
-      tessellationDetail: -1
-      bones: []
-      spriteID: f82bc944ca0ead440800000000000000
-      internalID: 4961524969992139407
-      vertices: []
-      indices: 
-      edges: []
-      weights: []
-    - serializedVersion: 2
-      name: phi_3
-      rect:
-        serializedVersion: 2
-        x: 79
-        y: 412
-        width: 34
-        height: 32
-      alignment: 0
-      pivot: {x: 0, y: 0}
-      border: {x: 0, y: 0, z: 0, w: 0}
-      customData: 
-      outline: []
-      physicsShape: []
-      tessellationDetail: -1
-      bones: []
-      spriteID: d9f57c1dd69106fe0800000000000000
-      internalID: -1197929541418917987
-      vertices: []
-      indices: 
-      edges: []
-      weights: []
-    - serializedVersion: 2
-      name: phi_4
-      rect:
-        serializedVersion: 2
-        x: 221
-        y: 408
-        width: 34
-        height: 33
-      alignment: 0
-      pivot: {x: 0, y: 0}
-      border: {x: 0, y: 0, z: 0, w: 0}
-      customData: 
-      outline: []
-      physicsShape: []
-      tessellationDetail: -1
-      bones: []
-      spriteID: 4abcac36c819df120800000000000000
-      internalID: 2449273804515101604
-      vertices: []
-      indices: 
-      edges: []
-      weights: []
-    - serializedVersion: 2
-      name: phi_5
-      rect:
-        serializedVersion: 2
-        x: 65
-        y: 375
-        width: 34
-        height: 32
-      alignment: 0
-      pivot: {x: 0, y: 0}
-      border: {x: 0, y: 0, z: 0, w: 0}
-      customData: 
-      outline: []
-      physicsShape: []
-      tessellationDetail: -1
-      bones: []
-      spriteID: a889ea25633f92950800000000000000
-      internalID: 6424933758061680778
-      vertices: []
-      indices: 
-      edges: []
-      weights: []
-    - serializedVersion: 2
-      name: phi_6
-      rect:
-        serializedVersion: 2
-        x: 233
-        y: 370
-        width: 34
-        height: 32
-      alignment: 0
-      pivot: {x: 0, y: 0}
-      border: {x: 0, y: 0, z: 0, w: 0}
-      customData: 
-      outline: []
-      physicsShape: []
-      tessellationDetail: -1
-      bones: []
-      spriteID: abb46b0f4925b2520800000000000000
-      internalID: 2678325203049008058
-      vertices: []
-      indices: 
-      edges: []
-      weights: []
-    - serializedVersion: 2
-      name: phi_7
-      rect:
-        serializedVersion: 2
-        x: 69
-        y: 334
-        width: 34
-        height: 33
-      alignment: 0
-      pivot: {x: 0, y: 0}
-      border: {x: 0, y: 0, z: 0, w: 0}
-      customData: 
-      outline: []
-      physicsShape: []
-      tessellationDetail: -1
-      bones: []
-      spriteID: 8ddd073a859836c80800000000000000
-      internalID: -8330663871913075240
-      vertices: []
-      indices: 
-      edges: []
-      weights: []
-    - serializedVersion: 2
-      name: phi_8
-      rect:
-        serializedVersion: 2
-        x: 92
-        y: 301
-        width: 33
-        height: 33
-      alignment: 0
-      pivot: {x: 0, y: 0}
-      border: {x: 0, y: 0, z: 0, w: 0}
-      customData: 
-      outline: []
-      physicsShape: []
-      tessellationDetail: -1
-      bones: []
-      spriteID: 99406089c3eaaae60800000000000000
-      internalID: 7974377665484686489
-      vertices: []
-      indices: 
-      edges: []
-      weights: []
-    - serializedVersion: 2
-      name: phi_9
-      rect:
-        serializedVersion: 2
-        x: 228
-        y: 329
-        width: 34
-        height: 33
-      alignment: 0
-      pivot: {x: 0, y: 0}
-      border: {x: 0, y: 0, z: 0, w: 0}
-      customData: 
-      outline: []
-      physicsShape: []
-      tessellationDetail: -1
-      bones: []
-      spriteID: 67cf52abc21926270800000000000000
-      internalID: 8242309889329069174
-      vertices: []
-      indices: 
-      edges: []
-      weights: []
-    - serializedVersion: 2
-      name: phi_10
-      rect:
-        serializedVersion: 2
-        x: 59
-        y: 19
-        width: 214
-        height: 299
-      alignment: 0
-      pivot: {x: 0, y: 0}
-      border: {x: 0, y: 0, z: 0, w: 0}
-      customData: 
-      outline: []
-      physicsShape: []
-      tessellationDetail: -1
-      bones: []
-      spriteID: 9b881f81f65a0f700800000000000000
-      internalID: 572139049254488249
-      vertices: []
-      indices: 
-      edges: []
-      weights: []
-    - serializedVersion: 2
-      name: phi_11
-      rect:
-        serializedVersion: 2
-        x: 205
-        y: 297
-        width: 34
-        height: 32
-      alignment: 0
-      pivot: {x: 0, y: 0}
-      border: {x: 0, y: 0, z: 0, w: 0}
-      customData: 
-      outline: []
-      physicsShape: []
-      tessellationDetail: -1
-      bones: []
-      spriteID: f5e2eb7290d744a00800000000000000
-      internalID: 739853717070556767
-      vertices: []
-      indices: 
-      edges: []
-      weights: []
-    - serializedVersion: 2
-      name: phi_12
-      rect:
-        serializedVersion: 2
-        x: 236
-        y: 19
-        width: 205
-        height: 295
-      alignment: 0
-      pivot: {x: 0, y: 0}
-      border: {x: 0, y: 0, z: 0, w: 0}
-      customData: 
-      outline: []
-      physicsShape: []
-      tessellationDetail: -1
-      bones: []
-      spriteID: a2472544324c09ee0800000000000000
-      internalID: -1256288640287214550
-      vertices: []
-      indices: 
-      edges: []
-      weights: []
     outline: []
     customData: 
     physicsShape: []
     bones: []
-    spriteID: 
+    spriteID: 5e97eb03825dee720800000000000000
     internalID: 0
     vertices: []
     indices: 
@@ -449,18 +149,6 @@ TextureImporter:
       entries: []
     nameFileIdTable:
       phi_0: -8821356396277160467
-      phi_1: 7186940955769485026
-      phi_10: 572139049254488249
-      phi_11: 739853717070556767
-      phi_12: -1256288640287214550
-      phi_2: 4961524969992139407
-      phi_3: -1197929541418917987
-      phi_4: 2449273804515101604
-      phi_5: 6424933758061680778
-      phi_6: 2678325203049008058
-      phi_7: -8330663871913075240
-      phi_8: 7974377665484686489
-      phi_9: 8242309889329069174
   mipmapLimitGroupName: 
   pSDRemoveMatte: 0
   userData: 

@@ -56,6 +56,6 @@
         "temp/": true,
         "Temp/": true
     },
-    "dotnet.defaultSolution": "madcamp3.sln",
+    "dotnet.defaultSolution": "bm2025.sln",
     "git.ignoreLimitWarning": true
 }
