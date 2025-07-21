@@ -761,6 +761,7 @@ MonoBehaviour:
   OverallScoreText: {fileID: 7717212845792807981}
   PotentialSlider: {fileID: 2978404640588146931}
   BackgroundImage: {fileID: 753202990916947481}
+  OverallBackgroundImage: {fileID: 5750851787851179893}
 --- !u!1 &9194357523280213629
 GameObject:
   m_ObjectHideFlags: 0
@@ -1175,6 +1176,17 @@ PrefabInstance:
     m_AddedGameObjects: []
     m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: 14888e1e73fbf0743aba9891c64c76c5, type: 3}
+--- !u!114 &5750851787851179893 stripped
+MonoBehaviour:
+  m_CorrespondingSourceObject: {fileID: 1460215261279632426, guid: 14888e1e73fbf0743aba9891c64c76c5, type: 3}
+  m_PrefabInstance: {fileID: 6596818186713635679}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: fe87c0e1cc204ed48ad3b37840f39efc, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
 --- !u!114 &7717212845792807981 stripped
 MonoBehaviour:
   m_CorrespondingSourceObject: {fileID: 3500870321863972722, guid: 14888e1e73fbf0743aba9891c64c76c5, type: 3}

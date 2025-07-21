@@ -5,6 +5,7 @@ using UnityEngine.SceneManagement;
 using TMPro;
 using System.Linq; // 추가: 팀 정렬에 사용
 using System.Collections; // 추가: 코루틴 사용
+using System.Reflection; // LocalDbManager private method 호출용
 using madcamp3.Assets.Script.Player;
 
 public class NewGameManager : MonoBehaviour
@@ -35,8 +36,9 @@ public class NewGameManager : MonoBehaviour
     [Header("Team Selection")]
     public Transform teamListContent; // ScrollView의 Content
     public GameObject teamItemPrefab;
-    // TeamDetailUI removed
-    public Button teamSelectConfirmButton;
+
+    [Header("Dialogs")]
+    [SerializeField] private ConfirmDialog confirmDialog;
 
     [Header("Team Intro")]
     public NarrationTyper teamIntroTyper;
@@ -63,7 +65,7 @@ public class NewGameManager : MonoBehaviour
     {
         InitDummyTeams();
         coachNameConfirmButton.onClick.AddListener(OnNameConfirmed);
-        teamSelectConfirmButton.onClick.AddListener(OnTeamConfirmed);
+        // Confirm dialog will handle confirmation; no global confirm button
         // ScrollView 레이아웃 설정 (한 번만)
         ConfigureTeamListLayout();
         // 초기에는 계속 버튼을 숨깁니다.
@@ -193,7 +195,6 @@ public class NewGameManager : MonoBehaviour
             firstClone.name = firstClone.name + "_LoopClone";
         }
 
-        teamSelectConfirmButton.interactable = false;
         selectedTeam = null;
 
         // Content 크기 및 셀 크기를 Viewport 비율에 맞춰 조정
@@ -232,9 +233,10 @@ public class NewGameManager : MonoBehaviour
         float targetCellHeight = grid.cellSize.y;
 
         // Viewport가 셀보다 작을 때 음수 패딩이 되지 않도록 Clamp
-        int sidePadding = Mathf.RoundToInt(Mathf.Max(0f, (viewport.rect.width - targetCellWidth) / 2f));
-        grid.padding.left = sidePadding;
-        grid.padding.right = sidePadding;
+        int basePad = Mathf.RoundToInt(Mathf.Max(0f, (viewport.rect.width - targetCellWidth) / 2f));
+        int extraPad = 10; // 요청: 양 옆 10px 추가
+        grid.padding.left = basePad + extraPad;
+        grid.padding.right = basePad + extraPad;
 
         int totalItems = teamListContent.childCount;
 
@@ -252,16 +254,17 @@ public class NewGameManager : MonoBehaviour
     private void OnTeamItemClicked(TeamData data)
     {
         selectedTeam = data;
-        teamSelectConfirmButton.interactable = true;
+        if (confirmDialog != null)
+        {
+            confirmDialog.Show($"{data.teamName} 팀을 선택하시겠습니까?", () => OnTeamConfirmed(), null);
+        }
     }
 
     private void OnTeamConfirmed()
     {
         if (selectedTeam == null) return;
-        // 선택한 팀 ID를 PlayerPrefs에 저장하여 이후 씬에서 사용 가능
         PlayerPrefs.SetInt(SelectedTeamIdKey, selectedTeam.teamId);
         PlayerPrefs.Save();
-        // 팀 선택 후 이름 입력 단계로 이동
         SwitchStep(Step.NameInput);
     }
 
@@ -299,59 +302,110 @@ public class NewGameManager : MonoBehaviour
 
     private void InitDummyTeams()
     {
+        // 실제 DB에서 팀/선수 정보를 불러옵니다.
         teams.Clear();
 
-        // 포지션 목록 (농구)
-        string[] positions = { "PG", "SG", "SF", "PF", "C" };
-
-        // 랜덤 이름 풀 (간단히 숫자)
-        int globalPlayerIndex = 1;
-
-        System.Random sysRand = new System.Random();
-
-        for (int teamIndex = 0; teamIndex < 30; teamIndex++)
+        var ratings = LocalDbManager.Instance.GetAllPlayerRatings();
+        if (ratings == null || ratings.Count == 0)
         {
-            // 팀명 및 줄임말
-            string teamName = $"팀 {teamIndex + 1}";
-            string abbreviation = string.Concat(Enumerable.Range(0, 3).Select(_ => (char)sysRand.Next('A', 'Z' + 1)));
+            Debug.LogError("[NewGameManager] 데이터베이스에서 선수 정보를 가져오지 못했습니다.");
+            return;
+        }
+
+        // 팀별로 그룹화(최소 5명 이상)
+        var teamGroups = ratings.GroupBy(r => r.team)
+                                .Where(g => g.Count() >= 5)
+                                .ToList();
+
+        int teamIdCounter = 1;
+        foreach (var g in teamGroups)
+        {
+            string abbr = g.Key;
+            string teamName = abbr; // TODO: 필요시 풀네임 매핑
+
+            // OVR 순 정렬
+            // LocalDbManager.CalculatePlayerCurrentValue (private) 메서드에 접근하기 위한 준비
+            MethodInfo calcValueMethod = typeof(LocalDbManager).GetMethod("CalculatePlayerCurrentValue", BindingFlags.Instance | BindingFlags.NonPublic);
+            if (calcValueMethod == null)
+            {
+                Debug.LogError("[NewGameManager] CalculatePlayerCurrentValue 메서드를 찾을 수 없습니다.");
+                continue;
+            }
+
+            // 각 선수의 가치를 계산한 뒤, 리스트에 저장
+            var playerValueList = new List<(PlayerRating rating, float value)>();
+            foreach (var rating in g)
+            {
+                var status = LocalDbManager.Instance.GetPlayerStatus(rating.player_id);
+                long salary = status?.Salary ?? 0;
+                float value = (float)calcValueMethod.Invoke(LocalDbManager.Instance, new object[] { rating.overallAttribute, rating.age, salary });
+                playerValueList.Add((rating, value));
+            }
+
+            // 가치 기준 내림차순 정렬
+            var sorted = playerValueList.OrderByDescending(v => v.value).ToList();
 
             List<PlayerLine> playerLines = new List<PlayerLine>();
 
-            // 15명 생성 (0-4 주전, 5-14 예비)
-            for (int i = 0; i < 15; i++)
+            foreach (var (r, value) in sorted)
             {
-                PlayerLine p = new PlayerLine();
-
-                // 고유 이름 생성
-                p.PlayerName = $"선수{globalPlayerIndex++}";
-
-                // 기본 랜덤 값들
-                p.BackNumber = UnityEngine.Random.Range(0, 100); // 0~99
-                p.Position = positions[UnityEngine.Random.Range(0, positions.Length)];
-                p.Age = UnityEngine.Random.Range(19, 41); // 19~40세
-
-                // 키 (feet-inches 형식 "6-5")
-                int foot = UnityEngine.Random.Range(5, 8); // 5~7피트
-                int inch = UnityEngine.Random.Range(0, 12); // 0~11인치
-                p.Height = $"{foot}-{inch}";
-
-                p.Weight = UnityEngine.Random.Range(150, 301); // 150~300 파운드
-                p.OverallScore = UnityEngine.Random.Range(0, 100);
-                p.Potential = UnityEngine.Random.Range(0, 100);
-
-                // 주전 5명(0~4)은 AssignedPosition 설정 (본인과 다를 수도 있음)
-                if (i < 5)
+                PlayerLine pl = new PlayerLine
                 {
-                    p.AssignedPosition = positions[UnityEngine.Random.Range(0, positions.Length)];
-                }
-
-                playerLines.Add(p);
+                    PlayerName = r.name,
+                    Position = PositionCodeToString(r.position),
+                    BackNumber = r.backNumber,
+                    Age = r.age,
+                    Height = r.height,
+                    Weight = r.weight,
+                    OverallScore = r.overallAttribute,
+                    Potential = r.potential,
+                    PlayerId = r.player_id,
+                    AssignedPosition = null
+                };
+                playerLines.Add(pl);
             }
 
-            TeamData teamData = new TeamData(teamIndex + 1, teamName, abbreviation, playerLines);
+            // 포지션별로 가치가 가장 높은 선수 1명씩을 주전으로 선정
+            var starters = new HashSet<PlayerLine>();
+            foreach (int posCode in Enumerable.Range(1, 5))
+            {
+                string posStr = PositionCodeToString(posCode);
+                var best = playerLines.Where(p => p.Position == posStr)
+                                      .OrderByDescending(p => p.OverallScore) // 동일 포지션 내에서 OVR로 Fallback 정렬
+                                      .FirstOrDefault();
+                if (best != null)
+                {
+                    best.AssignedPosition = posStr;
+                    starters.Add(best);
+                }
+            }
 
+            // 만약 어떤 포지션이 부족해서 5명이 안 됐다면, 남은 선수 중 가치 순으로 채움
+            if (starters.Count < 5)
+            {
+                foreach (var pl in playerLines.Except(starters).Take(5 - starters.Count))
+                {
+                    pl.AssignedPosition = pl.Position; // 가능한 원 포지션 유지
+                    starters.Add(pl);
+                }
+            }
+
+            TeamData teamData = new TeamData(teamIdCounter++, teamName, abbr, playerLines);
             teams.Add(teamData);
         }
+    }
+
+    private string PositionCodeToString(int code)
+    {
+        return code switch
+        {
+            1 => "PG",
+            2 => "SG",
+            3 => "SF",
+            4 => "PF",
+            5 => "C",
+            _ => "E"
+        };
     }
 
     #endregion

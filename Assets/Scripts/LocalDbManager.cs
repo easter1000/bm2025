@@ -88,6 +88,9 @@ public class LocalDbManager : MonoBehaviour
                 team = p.team,
                 age = p.age,
                 position = p.position,
+                backNumber = p.backnumber,
+                height = p.height,
+                weight = p.weight,
                 overallAttribute = p.overallAttribute,
                 currentValue = currentValue, // [수정됨] 계산된 가치 할당
                 closeShot = p.closeShot,
@@ -212,6 +215,9 @@ public class LocalDbManager : MonoBehaviour
         public string team;
         public int age;
         public int position;
+        public int backnumber;
+        public string height;
+        public int weight;
         public int contract_years_left;
         public long contract_value;
         public int overallAttribute;
