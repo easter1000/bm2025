@@ -19,8 +19,10 @@ public class CalendarGrid : MonoBehaviour
     [Header("Navigation UI")]
     [Tooltip("이전 달 이동 오브젝트 (Image 또는 Button)")]
     [SerializeField] private GameObject prevMonthObj;
+    [SerializeField] private Image prevMonthBackground;
     [Tooltip("다음 달 이동 오브젝트 (Image 또는 Button)")]
     [SerializeField] private GameObject nextMonthObj;
+    [SerializeField] private Image nextMonthBackground;
     [SerializeField] private TMP_Text monthLabel;
 
     private int _currentYear;
@@ -50,6 +52,7 @@ public class CalendarGrid : MonoBehaviour
     /// </summary>
     private void ChangeMonth(int delta)
     {
+        if ((_currentYear == 2025 && _currentMonth + delta < 10) || (_currentYear == 2026 && _currentMonth + delta > 4)) return;
         _currentMonth += delta;
         if (_currentMonth < 1)
         {
@@ -152,6 +155,23 @@ public class CalendarGrid : MonoBehaviour
         {
             string monthName = CultureInfo.GetCultureInfo("en-US").DateTimeFormat.GetMonthName(_currentMonth).ToUpper();
             monthLabel.text = $"{monthName} {_currentYear}";
+        }
+
+        Color enabledColor, disabledColor;
+        ColorUtility.TryParseHtmlString("#BABABA", out disabledColor);
+        ColorUtility.TryParseHtmlString("#0093FF", out enabledColor);
+
+        if (_currentYear == 2025 && _currentMonth == 10)
+        {
+            prevMonthBackground.color = disabledColor;
+        } else {
+            prevMonthBackground.color = enabledColor;
+        }
+        if (_currentYear == 2026 && _currentMonth == 4)
+        {
+            nextMonthBackground.color = disabledColor;
+        } else {
+            nextMonthBackground.color = enabledColor;
         }
     }
 
