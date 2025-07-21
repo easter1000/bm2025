@@ -26,6 +26,9 @@ public class PlayerRating
     public int age { get; set; }
     public int backnumber { get; set; } // [추가됨] 선수의 등번호
     public int position { get; set; }
+    public int backNumber { get; set; } // 선수의 등 번호
+    public string height { get; set; }  // "6-5" 형식
+    public int weight { get; set; }     // 파운드(lb)
     public int overallAttribute { get; set; }
     public float currentValue { get; set; }
     public int closeShot { get; set; }

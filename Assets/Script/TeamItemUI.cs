@@ -22,15 +22,23 @@ public class TeamItemUI : MonoBehaviour
     [SerializeField] private RectTransform benchContent; // ScrollView Viewport 하위 Content
     [SerializeField] private PlayerLineController benchPlayerPrefab;
 
+    [Header("Team Averages")]
+    [SerializeField] private TextMeshProUGUI startingAvgText;
+    [SerializeField] private Image startingAvgBackground;
+    [SerializeField] private TextMeshProUGUI substituteAvgText;
+    [SerializeField] private Image substituteAvgBackground;
+
     [Header("Interaction")]
     [SerializeField] private Button itemButton;
+
+    [Header("Player Detail")]
+    [SerializeField] private PlayerDetailUI playerDetailUI;
 
     private TeamData teamData;
     private Action<TeamData> onClickCallback;
 
-    private static readonly Color RowColorA = Color.white; // 주전 배경(흰색)
-    private static readonly Color RowColorB = new Color32(0xF2, 0xF2, 0xF2, 0xFF); // 벤치 짝수
-    private static readonly Color RowColorC = new Color32(0xE5, 0xE5, 0xE5, 0xFF); // 벤치 홀수
+    private static readonly Color RowColorEven = new Color32(0xF2, 0xF2, 0xF2, 0xFF); // 짝수 행
+    private static readonly Color RowColorOdd  = new Color32(0xE5, 0xE5, 0xE5, 0xFF); // 홀수 행
 
     public void Init(TeamData data, Action<TeamData> onClick)
     {
@@ -42,32 +50,74 @@ public class TeamItemUI : MonoBehaviour
 
         // -------------- Starting Players --------------
         var starters = data.playerLines.Take(5).ToList();
-        // Helper 로컬 함수
-        void Assign(PlayerLineController ctrl, string positionCode)
+
+        // ---- Team Average 계산 ----
+        if (startingAvgText != null && startingAvgBackground != null)
         {
-            if (ctrl == null) return;
-            PlayerLine pl = starters.FirstOrDefault(p => p.AssignedPosition == positionCode);
-            if (pl == null) pl = starters.FirstOrDefault(p => p.Position == positionCode);
-            if (pl == null) pl = starters.FirstOrDefault();
-            if (pl == null) return;
-            starters.Remove(pl);
-            ctrl.SetPlayerLine(pl, RowColorA);
+            float avgStart = starters.Count > 0 ? (float)starters.Average(p => p.OverallScore) : 0f;
+            startingAvgText.text = Mathf.RoundToInt(avgStart).ToString();
+            startingAvgBackground.color = GetColorByScore(avgStart);
         }
 
-        Assign(pgPlayer, "PG");
-        Assign(sgPlayer, "SG");
-        Assign(sfPlayer, "SF");
-        Assign(pfPlayer, "PF");
-        Assign(cPlayer, "C");
-
-        // 만약 남는 주전이 있다면 나머지 슬롯에 순차 배치
-        var remainingCtrls = new[] { pgPlayer, sgPlayer, sfPlayer, pfPlayer, cPlayer }.Where(c => c != null && string.IsNullOrEmpty(c.PlayerNameText.text)).ToList();
-        foreach (var ctrl in remainingCtrls)
+        var benchPlayersList = data.playerLines.Skip(5).ToList();
+        if (substituteAvgText != null && substituteAvgBackground != null)
         {
-            if (starters.Count == 0) break;
+            float avgSub = benchPlayersList.Count > 0 ? (float)benchPlayersList.Average(p => p.OverallScore) : 0f;
+            substituteAvgText.text = Mathf.RoundToInt(avgSub).ToString();
+            substituteAvgBackground.color = GetColorByScore(avgSub);
+        }
+
+        PlayerLineController[] starterCtrls = { pgPlayer, sgPlayer, sfPlayer, pfPlayer, cPlayer };
+
+        // Helper local method
+        void RegisterClick(PlayerLineController plc)
+        {
+            if (plc == null) return;
+            plc.OnClicked -= ShowPlayerDetail;
+            plc.OnClicked += ShowPlayerDetail;
+        }
+
+        for (int idx = 0; idx < starterCtrls.Length; idx++)
+        {
+            var ctrl = starterCtrls[idx];
+            if (ctrl == null) continue;
+
+            string desiredPos = idx switch
+            {
+                0 => "PG",
+                1 => "SG",
+                2 => "SF",
+                3 => "PF",
+                4 => "C",
+                _ => ""
+            };
+
+            PlayerLine pl = starters.FirstOrDefault(p => p.AssignedPosition == desiredPos);
+            if (pl == null) pl = starters.FirstOrDefault(p => p.Position == desiredPos);
+            if (pl == null) pl = starters.FirstOrDefault();
+            if (pl == null) continue;
+
+            starters.Remove(pl);
+
+            // 반대 순서 색: index 0 -> Odd, 1 -> Even, ...
+            Color bg = (idx % 2 == 0) ? RowColorOdd : RowColorEven;
+            ctrl.SetPlayerLine(pl, bg);
+
+            RegisterClick(ctrl);
+        }
+
+        // 아직 남은 주전(드물겠지만) 나머지 슬롯 채우기
+        for (int idx = 0; idx < starterCtrls.Length && starters.Count > 0; idx++)
+        {
+            var ctrl = starterCtrls[idx];
+            if (ctrl == null) continue;
+            if (!string.IsNullOrEmpty(ctrl.PlayerNameText.text)) continue; // 이미 채워짐
+
             var pl = starters[0];
             starters.RemoveAt(0);
-            ctrl.SetPlayerLine(pl, RowColorA);
+            Color bg = (idx % 2 == 0) ? RowColorOdd : RowColorEven;
+            ctrl.SetPlayerLine(pl, bg);
+            RegisterClick(ctrl);
         }
 
         // -------------- Bench Players --------------
@@ -120,16 +170,49 @@ public class TeamItemUI : MonoBehaviour
                 le.minWidth = 842f;
                 le.flexibleWidth = 0f;
 
-                Color bgColor = (i % 2 == 0) ? RowColorB : RowColorC;
+                Color bgColor = (i % 2 == 0) ? RowColorEven : RowColorOdd;
                 plc.SetPlayerLine(benchPlayers[i], bgColor);
+                RegisterClick(plc);
             }
         }
 
-        // 버튼 클릭 → 콜백
+        // 버튼 클릭 → 팀 선택 콜백 (확인 다이얼로그는 NewGameManager에서 처리)
         if (itemButton != null)
         {
             itemButton.onClick.RemoveAllListeners();
             itemButton.onClick.AddListener(() => onClickCallback?.Invoke(teamData));
         }
+
+        // 초기 상세 정보: 첫 번째 주전 선수를 표시
+        if (playerDetailUI != null && starterCtrls.Length > 0 && starterCtrls[0] != null && starterCtrls[0].Data != null)
+        {
+            ShowPlayerDetail(starterCtrls[0].Data);
+        }
+
+        void ShowPlayerDetail(PlayerLine pl)
+        {
+            if (playerDetailUI == null || pl == null) return;
+            var rating = LocalDbManager.Instance.GetAllPlayerRatings().FirstOrDefault(r => r.player_id == pl.PlayerId);
+            if (rating != null)
+            {
+                playerDetailUI.SetPlayer(rating);
+            }
+        }
+    }
+
+    private Color GetColorByScore(float score)
+    {
+        if (score >= 80f)
+        {
+            ColorUtility.TryParseHtmlString("#4147F5", out Color c);
+            return c;
+        }
+        else if (score >= 60f)
+        {
+            ColorUtility.TryParseHtmlString("#00CA51", out Color c);
+            return c;
+        }
+        ColorUtility.TryParseHtmlString("#FF0C0C", out Color col);
+        return col;
     }
 } 

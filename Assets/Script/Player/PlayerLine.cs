@@ -17,6 +17,7 @@ namespace madcamp3.Assets.Script.Player
         public int Weight;      // 파운드(lb) 단위
         public int OverallScore; // 종합 능력치 (0~99)
         public int Potential;    // 잠재력 (0~99)
+        public int PlayerId;     // 고유 player_id (DB)
         // 주전 선수일 때만 사용: 실제 라인업에서 맡은 포지션 (PG/SG/SF/PF/C)
         public string AssignedPosition; // null 또는 "" 면 미배정
     }
