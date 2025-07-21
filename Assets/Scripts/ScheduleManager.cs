@@ -35,45 +35,146 @@ public class ScheduleManager
         Debug.Log($"[ScheduleManager] Successfully generated and saved {finalSchedule.Count} games for the {season} season.");
     }
 
-    // 82경기 규칙에 따라 모든 경기 조합을 생성
+    // 82경기 규칙에 따라 모든 경기 조합을 생성 (팀당 82경기 보장)
     private List<Schedule> CreateAllMatchups()
     {
         var matchups = new List<Schedule>();
 
+        // ──────────────────────────────────────
+        // 1) 같은 디비전 (4경기) + 다른 컨퍼런스 (2경기)
+        // ──────────────────────────────────────
         foreach (var teamA in allTeams)
         {
-            // 같은 디비전 내 4개 팀과 4번씩 (홈2, 원정2) -> 16경기
-            var teamsInSameDivision = allTeams.Where(t => t.team_id != teamA.team_id && t.division == teamA.division).ToList();
-            foreach (var teamB in teamsInSameDivision)
+            foreach (var teamB in allTeams)
             {
-                AddMatchups(matchups, teamA, teamB, 2); // 홈 2, 원정 2
-                AddMatchups(matchups, teamB, teamA, 2);
-            }
+                if (teamA.team_id >= teamB.team_id) continue; // 중복 방지 (A<B)
 
-            // 다른 컨퍼런스 15개 팀과 2번씩 (홈1, 원정1) -> 30경기
-            var teamsInOtherConf = allTeams.Where(t => t.conference != teamA.conference).ToList();
-            foreach (var teamB in teamsInOtherConf)
-            {
-                AddMatchups(matchups, teamA, teamB, 1); // 홈 1, 원정 1
-                AddMatchups(matchups, teamB, teamA, 1);
-            }
-            
-            // 같은 컨퍼런스, 다른 디비전 10개 팀과 3~4번씩 (총 36경기)
-            var teamsInSameConf = allTeams.Where(t => t.team_id != teamA.team_id && t.conference == teamA.conference && t.division != teamA.division).ToList();
-            // (로테이션이 복잡하므로 여기서는 간소화하여 6팀과는 4번, 4팀과는 3번 만나는 것으로 가정)
-            // ... 이 부분은 게임의 특성에 맞게 규칙을 정해야 합니다.
-            // 여기서는 36경기를 맞추기 위해 모든 팀과 3~4회 랜덤하게 만나는 식으로 간소화
-            foreach(var teamB in teamsInSameConf) {
-                int games = UnityEngine.Random.Range(3, 5); // 3 or 4 games
-                AddMatchups(matchups, teamA, teamB, games / 2);
-                AddMatchups(matchups, teamB, teamA, games - (games / 2));
+                if (teamA.division == teamB.division)
+                {
+                    // 4경기 (홈2/원정2)
+                    AddMatchups(matchups, teamA, teamB, 2);
+                    AddMatchups(matchups, teamB, teamA, 2);
+                }
+                else if (teamA.conference != teamB.conference)
+                {
+                    // 2경기 (홈1/원정1)
+                    AddMatchups(matchups, teamA, teamB, 1);
+                    AddMatchups(matchups, teamB, teamA, 1);
+                }
             }
         }
-        
-        // 중복된 경기 제거 (A vs B, B vs A가 모두 생성되었으므로)
-        return matchups.GroupBy(m => new { H = m.HomeTeamAbbr, A = m.AwayTeamAbbr, D = m.GameDate })
-                       .Select(g => g.First())
-                       .ToList();
+
+        // ──────────────────────────────────────
+        // 2) 같은 컨퍼런스/다른 디비전 (10팀) → 팀당 6팀과 4경기, 4팀과 3경기
+        //    팀 간 대칭을 유지하며, 각 팀의 4경기 슬롯 6개를 충족하도록 배정
+        // ──────────────────────────────────────
+
+        // 남은 게임 슬롯(4G 시리즈)을 추적
+        var fourGameQuotaLeft = allTeams.ToDictionary(t => t.team_abbv, _ => 6);
+
+        // 모든 해당 페어 수집 (conference 동일, division 다름)
+        var sameConfPairs = new List<(Team A, Team B)>();
+        for (int i = 0; i < allTeams.Count; i++)
+        {
+            for (int j = i + 1; j < allTeams.Count; j++)
+            {
+                Team A = allTeams[i];
+                Team B = allTeams[j];
+                if (A.conference == B.conference && A.division != B.division)
+                {
+                    sameConfPairs.Add((A, B));
+                }
+            }
+        }
+
+        // 랜덤 순회
+        sameConfPairs = sameConfPairs.OrderBy(_ => Guid.NewGuid()).ToList();
+
+        // 할당 결과 저장 (true=4경기, false=3경기) → 후속 조정에 사용
+        var pairIsFourGame = new Dictionary<(string, string), bool>();
+
+        foreach (var pair in sameConfPairs)
+        {
+            bool assignFour = false;
+
+            if (fourGameQuotaLeft[pair.A.team_abbv] > 0 && fourGameQuotaLeft[pair.B.team_abbv] > 0)
+            {
+                // 두 팀 모두 4게임 슬롯 여유 있을 때 60% 확률로 4경기
+                assignFour = UnityEngine.Random.value < 0.6f;
+            }
+
+            // 만약 할당이 4경기인데 한쪽이라도 quota=0 이면 강제로 3경기
+            if (assignFour && (fourGameQuotaLeft[pair.A.team_abbv] == 0 || fourGameQuotaLeft[pair.B.team_abbv] == 0))
+                assignFour = false;
+
+            if (assignFour)
+            {
+                pairIsFourGame[(pair.A.team_abbv, pair.B.team_abbv)] = true;
+                fourGameQuotaLeft[pair.A.team_abbv]--;
+                fourGameQuotaLeft[pair.B.team_abbv]--;
+
+                // 4경기: 홈2/원정2
+                AddMatchups(matchups, pair.A, pair.B, 2);
+                AddMatchups(matchups, pair.B, pair.A, 2);
+            }
+            else
+            {
+                pairIsFourGame[(pair.A.team_abbv, pair.B.team_abbv)] = false;
+
+                // 3경기: 2-1 랜덤 분배
+                bool aGetsTwoHome = UnityEngine.Random.value > 0.5f;
+                int aHome = aGetsTwoHome ? 2 : 1;
+                int bHome = 3 - aHome;
+                AddMatchups(matchups, pair.A, pair.B, aHome);
+                AddMatchups(matchups, pair.B, pair.A, bHome);
+            }
+        }
+
+        // ──────────────────────────────────────
+        // 3) 만약 quota가 남은 팀이 있으면 (이론상 드물지만) 3→4 업그레이드
+        // ──────────────────────────────────────
+        if (fourGameQuotaLeft.Values.Any(v => v > 0))
+        {
+            foreach (var pair in sameConfPairs)
+            {
+                if (fourGameQuotaLeft[pair.A.team_abbv] == 0 || fourGameQuotaLeft[pair.B.team_abbv] == 0)
+                    continue;
+
+                if (!pairIsFourGame[(pair.A.team_abbv, pair.B.team_abbv)])
+                {
+                    // 현재 3경기 → 4경기로 업그레이드 (추가 1경기씩 홈/원정 균등)
+                    AddMatchups(matchups, pair.A, pair.B, 1);
+                    AddMatchups(matchups, pair.B, pair.A, 1);
+
+                    pairIsFourGame[(pair.A.team_abbv, pair.B.team_abbv)] = true;
+                    fourGameQuotaLeft[pair.A.team_abbv]--;
+                    fourGameQuotaLeft[pair.B.team_abbv]--;
+
+                    if (fourGameQuotaLeft.Values.All(v => v == 0))
+                        break;
+                }
+            }
+        }
+
+        // 최종 검증: 모든 팀 82경기인지 로그
+        var gamesPerTeam = new Dictionary<string, int>();
+        foreach (var s in matchups)
+        {
+            if (!gamesPerTeam.ContainsKey(s.HomeTeamAbbr)) gamesPerTeam[s.HomeTeamAbbr] = 0;
+            if (!gamesPerTeam.ContainsKey(s.AwayTeamAbbr)) gamesPerTeam[s.AwayTeamAbbr] = 0;
+            gamesPerTeam[s.HomeTeamAbbr]++;
+            gamesPerTeam[s.AwayTeamAbbr]++;
+        }
+
+        foreach (var kv in gamesPerTeam)
+        {
+            if (kv.Value != 82)
+            {
+                Debug.LogWarning($"[ScheduleManager] Team {kv.Key} has {kv.Value} games instead of 82.");
+            }
+        }
+
+        return matchups;
     }
 
     private void AddMatchups(List<Schedule> list, Team home, Team away, int count)

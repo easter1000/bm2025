@@ -195,7 +195,7 @@ public class LocalDbManager : MonoBehaviour
             return;
         }
         User existing = GetUser();
-        string today = System.DateTime.Now.ToString("yyyy-MM-dd");
+        string today = "2025-10-21";
         if (existing == null)
         {
             User newUser = new User

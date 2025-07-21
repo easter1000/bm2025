@@ -5,6 +5,7 @@ using System;
 using UnityEngine.EventSystems; // 이미지 클릭 감지를 위해
 using System.Collections.Generic;
 using System.Globalization; // 영어 월 표기를 위해
+using System.Linq;
 
 /// <summary>
 /// CallenderCell 들을 생성/관리하며 월 이동을 지원하는 달력 그리드.
@@ -12,7 +13,7 @@ using System.Globalization; // 영어 월 표기를 위해
 public class CalendarGrid : MonoBehaviour
 {
     [Header("Prefabs & Parents")]
-    [SerializeField] private CallenderCell cellPrefab;
+    [SerializeField] private CalendarCell cellPrefab;
     [SerializeField] private Transform gridParent; // GridLayoutGroup가 부착된 Transform
 
     [Header("Navigation UI")]
@@ -26,6 +27,9 @@ public class CalendarGrid : MonoBehaviour
     private int _currentMonth;
 
     private const int TOTAL_SLOTS = 42; // 7x6 달력 그리드
+
+    [Header("Schedule View")]
+    [SerializeField] private ScheduleView scheduleView;
 
     private void Awake()
     {
@@ -104,7 +108,7 @@ public class CalendarGrid : MonoBehaviour
 
         for (int slot = 0; slot < TOTAL_SLOTS; slot++)
         {
-            CallenderCell cell = Instantiate(cellPrefab, gridParent);
+            CalendarCell cell = Instantiate(cellPrefab, gridParent);
 
             int dayNum = slot - offset + 1;
             if (dayNum >= 1 && dayNum <= daysInMonth)
@@ -114,25 +118,38 @@ public class CalendarGrid : MonoBehaviour
                 List<Schedule> games = LocalDbManager.Instance.GetGamesForDate(dateStr);
                 bool hasGame = games != null && games.Count > 0;
 
-                Sprite opponentLogo = null;
+                // --- Determine opponent logo if the user's team plays on this date ---
+                Sprite displayLogo = null;
+
+                bool isUserGame = false;
                 if (hasGame && !string.IsNullOrEmpty(userTeamAbbr))
                 {
-                    // 첫 경기 기준으로 상대 팀 로고 표시 (여러 경기 있을 경우 우선 1개만)
-                    Schedule game = games[0];
-                    string oppAbbr = game.HomeTeamAbbr == userTeamAbbr ? game.AwayTeamAbbr : game.HomeTeamAbbr;
-                    Team oppTeam = LocalDbManager.Instance.GetTeam(oppAbbr);
-                    if (oppTeam != null && !string.IsNullOrEmpty(oppTeam.team_logo))
+                    // Check if any game includes the user's team
+                    Schedule userGame = games.FirstOrDefault(g => g.HomeTeamAbbr == userTeamAbbr || g.AwayTeamAbbr == userTeamAbbr);
+                    if (userGame != null)
                     {
-                        // team_logo 에 Resources 경로가 저장되어 있다고 가정
-                        opponentLogo = Resources.Load<Sprite>(oppTeam.team_logo);
+                        isUserGame = true;
+
+                        // Identify opponent team abbreviation
+                        string opponentAbbr = userGame.HomeTeamAbbr == userTeamAbbr ? userGame.AwayTeamAbbr : userGame.HomeTeamAbbr;
+
+                        Team opponentTeam = LocalDbManager.Instance.GetTeam(opponentAbbr);
+                        if (opponentTeam != null && !string.IsNullOrEmpty(opponentTeam.team_logo))
+                        {
+                            displayLogo = Resources.Load<Sprite>($"team_photos/{opponentTeam.team_logo}");
+                        }
                     }
                 }
 
-                cell.Configure(dayNum, hasGame, opponentLogo);
+                // If user's team is not playing, keep previous behaviour (no logo)
+
+                cell.Configure(dayNum, _currentMonth, _currentYear, hasGame, displayLogo, isUserGame);
+                cell.OnCellClicked += HandleCellClicked;
             }
             else
             {
-                cell.Configure(0, false, null);
+                // 빈 슬롯도 outline 회색으로 유지 (isUserGame = false)
+                cell.Configure(0, _currentMonth, _currentYear, false, null, false);
             }
         }
 
@@ -156,4 +173,9 @@ public class CalendarGrid : MonoBehaviour
         _currentYear = dt.Year;
         _currentMonth = dt.Month;
     }
-} 
+
+    private void HandleCellClicked(DateTime date)
+    {
+        scheduleView?.ShowScheduleForDate(date);
+    }
+}
