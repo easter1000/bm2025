@@ -7,19 +7,35 @@ using System.Collections.Generic;
 
 public class LocalDbManager : MonoBehaviour
 {
-    public static LocalDbManager Instance { get; private set; }
+    private static LocalDbManager _instance;
+    public static LocalDbManager Instance
+    {
+        get
+        {
+            if (_instance == null)
+            {
+                _instance = FindFirstObjectByType<LocalDbManager>();
+                if (_instance == null)
+                {
+                    GameObject obj = new GameObject("LocalDbManager");
+                    _instance = obj.AddComponent<LocalDbManager>();
+                }
+            }
+            return _instance;
+        }
+    }
     
     private SQLiteConnection _db;
     private string _dbPath;
 
     void Awake()
     {
-        if (Instance != null && Instance != this)
+        if (_instance != null && _instance != this)
         {
             Destroy(gameObject);
             return;
         }
-        Instance = this;
+        _instance = this;
         DontDestroyOnLoad(gameObject);
         InitializeDatabase();
     }

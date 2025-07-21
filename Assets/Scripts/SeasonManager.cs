@@ -37,28 +37,19 @@ public class SeasonManager : MonoBehaviour
         _tradeManager = FindAnyObjectByType<TradeManager>();
         if (_tradeManager == null)
         {
-            Debug.LogError("TradeManager를 찾을 수 없습니다. Scene에 추가해주세요.");
-            this.enabled = false;
-            return;
+            Debug.LogWarning("TradeManager를 찾을 수 없습니다. 트레이드 관련 기능이 비활성화됩니다.");
         }
 
-        // 유저 팀 정보 가져오기 (임시로 "BOS" 사용, 실제로는 로그인 정보 등에서 가져와야 함)
-        _userTeamAbbr = "BOS"; 
-
-        // 시즌 시작 날짜 설정 (예: 2024년 10월 1일)
-        _currentDate = new System.DateTime(_currentSeason - 1, 10, 1);
-        Debug.Log($"시즌 {_currentSeason}을 시작합니다. 현재 날짜: {_currentDate.ToShortDateString()}");
+        _userTeamAbbr = "BOS";
     }
 
     public void InitializeNewSeason(int season, string userTeamAbbr)
     {
         _currentSeason = season;
         _userTeamAbbr = userTeamAbbr;
-        _currentDate = new System.DateTime(_currentSeason - 1, 10, 1);
         _dbManager = LocalDbManager.Instance; // DB 매니저 인스턴스 확인
         _tradeManager = FindAnyObjectByType<TradeManager>();
-        
-        Debug.Log($"새로운 시즌 {_currentSeason}이(가) 팀 {userTeamAbbr}와(과) 함께 시작됩니다. 현재 날짜: {_currentDate.ToShortDateString()}");
+        ScheduleManager.Instance.GenerateNewSeasonSchedule(season);
     }
 
     void Update()
@@ -93,6 +84,8 @@ public class SeasonManager : MonoBehaviour
     /// </summary>
     private void AttemptAiToAiTrades()
     {
+        if (_tradeManager == null) return; // TradeManager가 없으면 트레이드 시도 안 함
+
         // 매일 호출되므로, 이 로그는 너무 자주 나타나지 않도록 주석 처리합니다.
         // Debug.Log("AI 팀들의 트레이드 시장을 확인합니다...");
 

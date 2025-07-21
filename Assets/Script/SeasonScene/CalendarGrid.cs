@@ -132,12 +132,7 @@ public class CalendarGrid : MonoBehaviour
 
                         // Identify opponent team abbreviation
                         string opponentAbbr = userGame.HomeTeamAbbr == userTeamAbbr ? userGame.AwayTeamAbbr : userGame.HomeTeamAbbr;
-
-                        Team opponentTeam = LocalDbManager.Instance.GetTeam(opponentAbbr);
-                        if (opponentTeam != null && !string.IsNullOrEmpty(opponentTeam.team_logo))
-                        {
-                            displayLogo = Resources.Load<Sprite>($"team_photos/{opponentTeam.team_logo}");
-                        }
+                        displayLogo = Resources.Load<Sprite>($"team_photos/{opponentAbbr}");
                     }
                 }
 

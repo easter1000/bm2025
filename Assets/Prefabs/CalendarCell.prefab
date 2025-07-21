@@ -268,7 +268,6 @@ MonoBehaviour:
   backgroundImage: {fileID: 3735463207736140709}
   leagueLogoImage: {fileID: 911597126520759077}
   teamLogoImage: {fileID: 3043595762122859877}
-  outlineTargetImage: {fileID: 6941576726482298891}
   nbaLogoResourcePath: Resources/team_photos/nba
 --- !u!1 &6870706775554323428
 GameObject:
@@ -304,8 +303,8 @@ RectTransform:
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
   m_AnchorMin: {x: 1, y: 0}
   m_AnchorMax: {x: 1, y: 0}
-  m_AnchoredPosition: {x: -28, y: 28}
-  m_SizeDelta: {x: 50, y: 50}
+  m_AnchoredPosition: {x: -25.8379, y: 37.5941}
+  m_SizeDelta: {x: 45.6759, y: 69.1881}
   m_Pivot: {x: 0.5, y: 0.5}
 --- !u!222 &1713250861053785691
 CanvasRenderer:
