@@ -55,7 +55,7 @@ public class LocalDbManager : MonoBehaviour
             _db.CreateTable<PlayerStat>();
             _db.CreateTable<User>();
             _db.CreateTable<TeamFinance>();
-            _db.CreateTable<Schedule>(); // Schedule 테이블 생성 추가
+            _db.CreateTable<Schedule>();
             Debug.Log("[DB] Tables created.");
             PopulateInitialData();
         }
@@ -118,7 +118,7 @@ public class LocalDbManager : MonoBehaviour
         }
         _db.InsertAll(ratings); _db.InsertAll(statuses);
         Debug.Log($"[DB] Populated PlayerRating and PlayerStatus with {playerList.players.Length} players.");
-
+        
         // --- 2. 팀 데이터 로드 및 처리 ---
         TextAsset teamsJson = Resources.Load<TextAsset>("teams");
         if (teamsJson == null) { Debug.LogError("[DB] teams.json not found!"); return; }
@@ -273,20 +273,17 @@ public class LocalDbManager : MonoBehaviour
         }
     }
 
-    // JSON 파싱을 위한 도우미 클래스들
+    #region JSON Helper Classes
     [Serializable]
     public class PlayerMasterData
     {
         public int player_id;
         public string name;
         public string team;
-        public int age;
-        public int position;
-        public int backnumber;
         public string height;
         public int weight;
-        public int contract_years_left;
-        public long contract_value;
+        public int age;
+        public int position;
         public int overallAttribute;
         public int closeShot;
         public int midRangeShot;
@@ -306,12 +303,33 @@ public class LocalDbManager : MonoBehaviour
         public int offensiveRebound;
         public int defensiveRebound;
         public int potential;
-
+        public string backnumber;
+        public int contract_years_left;
+        public long contract_value;
     }
 
-    #region JSON Helper Classes
-    [Serializable] public class PlayerMasterDataList { public PlayerMasterData[] players; }
-    [Serializable] public class TeamMasterData { public int team_id; public string team_name; public string team_abbv; public string conference; public string division; public string team_color; public string team_logo; }
-    [Serializable] public class TeamMasterDataList { public TeamMasterData[] teams; }
+    [Serializable] 
+    public class PlayerMasterDataList 
+    { 
+        public PlayerMasterData[] players; 
+    }
+
+    [Serializable] 
+    public class TeamMasterData 
+    { 
+        public int team_id; 
+        public string team_name; 
+        public string team_abbv; 
+        public string conference; 
+        public string division; 
+        public string team_color; 
+        public string team_logo; 
+    }
+    
+    [Serializable] 
+    public class TeamMasterDataList 
+    { 
+        public TeamMasterData[] teams; 
+    }
     #endregion
 }
