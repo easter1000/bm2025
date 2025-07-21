@@ -112,7 +112,7 @@ public class LocalDbManager : MonoBehaviour
                 defensiveRebound = p.defensiveRebound,
                 potential = p.potential
             });
-            statuses.Add(new PlayerStatus { PlayerId = p.player_id, ContractType = "Standard", YearsLeft = p.contract_years_left, Salary = p.contract_value, Stamina = 100, IsInjured = false, InjuryDaysLeft = 0, LastChecked = DateTime.UtcNow.ToString("s") });
+            statuses.Add(new PlayerStatus { PlayerId = p.player_id, YearsLeft = p.contract_years_left, Salary = p.contract_value, Stamina = 100, IsInjured = false, InjuryDaysLeft = 0});
             if (!teamSalaries.ContainsKey(p.team)) teamSalaries[p.team] = 0;
             teamSalaries[p.team] += p.contract_value;
         }
@@ -185,6 +185,39 @@ public class LocalDbManager : MonoBehaviour
     
     // --- User ---
     public User GetUser() => _db.Table<User>().FirstOrDefault();
+
+    // --- NEW: Save or update the current user information ---
+    public void SaveOrUpdateUser(string coachName, string selectedTeamAbbr, int currentSeason = 2025)
+    {
+        if (string.IsNullOrEmpty(selectedTeamAbbr))
+        {
+            Debug.LogWarning("[DB] SaveOrUpdateUser called with empty team abbreviation.");
+            return;
+        }
+        User existing = GetUser();
+        string today = System.DateTime.Now.ToString("yyyy-MM-dd");
+        if (existing == null)
+        {
+            User newUser = new User
+            {
+                CoachName = coachName,
+                SelectedTeamAbbr = selectedTeamAbbr,
+                CurrentSeason = currentSeason,
+                CurrentDate = today
+            };
+            _db.Insert(newUser);
+            Debug.Log("[DB] User record created.");
+        }
+        else
+        {
+            existing.CoachName = coachName;
+            existing.SelectedTeamAbbr = selectedTeamAbbr;
+            existing.CurrentSeason = currentSeason;
+            existing.CurrentDate = today;
+            _db.Update(existing);
+            Debug.Log("[DB] User record updated.");
+        }
+    }
 
     // --- Team & Schedule ---
     public List<Team> GetAllTeams() => _db.Table<Team>().ToList();
