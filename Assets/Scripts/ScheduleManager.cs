@@ -7,7 +7,7 @@ public class ScheduleManager
 {
     private List<Team> allTeams;
     private readonly DateTime seasonStartDate = new DateTime(2025, 10, 21);
-    private readonly DateTime seasonEndDate = new DateTime(2025, 4, 15); // 마지막 날 포함
+    private readonly DateTime seasonEndDate = new DateTime(2026, 4, 15); // 마지막 날 포함
 
     // SeasonManager가 호출하는 메인 함수
     public void GenerateNewSeasonSchedule(int season)
