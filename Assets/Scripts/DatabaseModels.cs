@@ -98,6 +98,7 @@ public class TeamFinance
 {
     [PrimaryKey] public string TeamAbbr { get; set; }
     public int Season { get; set; }
+    public int Standing { get; set; } // [추가] 팀의 현재 등수
     public int Wins { get; set; } // [추가됨]
     public int Losses { get; set; } // [추가됨]
     public long SalaryCap { get; set; }

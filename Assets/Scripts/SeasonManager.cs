@@ -1,152 +1,219 @@
 using UnityEngine;
-using UnityEngine.SceneManagement;
-using System;
+using System.Collections;
+using System.Collections.Generic;
+using System.Linq;
 
 public class SeasonManager : MonoBehaviour
 {
-    public static SeasonManager Instance;
+    public static SeasonManager Instance { get; private set; }
 
-    private DateTime _currentDate;
-    private QuickGameSimulator _quickSim;
-    private string _userTeamAbbr;
-    private int _currentSeason;
+    private LocalDbManager _dbManager;
+    private TradeManager _tradeManager;
+    
+    // 하루가 지나는 시간(초). 실제 게임 시간 기준
+    public float realSecondsPerDay = 1.0f; 
+
+    private int _currentSeason = 2025;
+    private System.DateTime _currentDate;
+    private float _dayTimer = 0f;
+    private string _userTeamAbbr; // 유저 팀 약어 저장
 
     void Awake()
     {
         if (Instance != null && Instance != this)
         {
             Destroy(gameObject);
-            return;
         }
-        Instance = this;
-        DontDestroyOnLoad(gameObject);
-        _quickSim = new QuickGameSimulator();
-    }
-
-    void OnEnable()
-    {
-        GameSimulator.OnGameFinished += HandleGameFinished;
-        SceneManager.sceneLoaded += OnSceneLoaded;
-    }
-
-    void OnDisable()
-    {
-        GameSimulator.OnGameFinished -= HandleGameFinished;
-        SceneManager.sceneLoaded -= OnSceneLoaded;
-    }
-
-    // --- 여기가 캘린더 생성의 시작점입니다 ---
-    // UI의 "새 시즌 시작" 버튼 등에 이 함수를 연결합니다.
-    public void StartNewSeason(int season)
-    {
-        Debug.Log($"--- Starting New Season Generation for {season} ---");
-        _currentSeason = season;
-        
-        // 1. 유저 팀 정보를 가져옵니다. (LocalDbManager에 GetUser() 함수 필요)
-        _userTeamAbbr = LocalDbManager.Instance.GetUser().SelectedTeamAbbr; 
-        
-        // 2. ScheduleManager를 생성하여 스케줄 생성을 지시합니다.
-        var scheduleGenerator = new ScheduleManager();
-        scheduleGenerator.GenerateNewSeasonSchedule(season);
-        
-        // 3. 게임의 현재 날짜를 시즌 시작일로 설정합니다.
-        _currentDate = new DateTime(season, 10, 21);
-
-        Debug.Log($"New season {season} has successfully started. Current date: {_currentDate:yyyy-MM-dd}");
-        
-        // 이 시점에서 리그 순위, 경기 일정 등 시즌 UI를 업데이트하는 함수를 호출할 수 있습니다.
-        // UIManager.Instance.UpdateSeasonView();
-    }
-
-    // 다음 날 진행 (UI 버튼 등에 연결)
-    public void SimulateNextDay()
-    {
-        string dateString = _currentDate.ToString("yyyy-MM-dd");
-        var gamesToday = LocalDbManager.Instance.GetGamesForDate(dateString);
-
-        if (gamesToday.Count == 0)
+        else
         {
-            Debug.Log($"No games scheduled for {dateString}. Proceeding to next day.");
-            ProceedToNextDay();
+            Instance = this;
+            DontDestroyOnLoad(gameObject);
+        }
+    }
+
+    void Start()
+    {
+        _dbManager = LocalDbManager.Instance;
+        _tradeManager = FindAnyObjectByType<TradeManager>();
+        if (_tradeManager == null)
+        {
+            Debug.LogError("TradeManager를 찾을 수 없습니다. Scene에 추가해주세요.");
+            this.enabled = false;
             return;
         }
 
-        Debug.Log($"--- Simulating Day: {dateString}, {gamesToday.Count} games scheduled ---");
+        // 유저 팀 정보 가져오기 (임시로 "BOS" 사용, 실제로는 로그인 정보 등에서 가져와야 함)
+        _userTeamAbbr = "BOS"; 
 
-        foreach (var game in gamesToday)
+        // 시즌 시작 날짜 설정 (예: 2024년 10월 1일)
+        _currentDate = new System.DateTime(_currentSeason - 1, 10, 1);
+        Debug.Log($"시즌 {_currentSeason}을 시작합니다. 현재 날짜: {_currentDate.ToShortDateString()}");
+    }
+
+    void Update()
+    {
+        _dayTimer += Time.deltaTime;
+
+        if (_dayTimer >= realSecondsPerDay)
         {
-            // 유저 팀의 경기인지 확인
-            if (game.HomeTeamAbbr == _userTeamAbbr || game.AwayTeamAbbr == _userTeamAbbr)
-            {
-                // 유저 경기 -> 상세 시뮬레이션 시작
-                Debug.Log($"User game detected! {game.AwayTeamAbbr} at {game.HomeTeamAbbr}. Loading game scene...");
-                StartDetailedSimulation(game);
-                return; // 상세 시뮬레이션이 끝날 때까지 대기
-            }
-            else
-            {
-                // AI 경기 -> 빠른 시뮬레이션
-                ProcessQuickSimulation(game);
-            }
-        }
-
-        // 오늘의 모든 AI 경기가 끝났으면 다음 날로
-        ProceedToNextDay();
-    }
-
-    private void ProcessQuickSimulation(Schedule game)
-    {
-        GameResult result = _quickSim.SimulateGame(game);
-        UpdateDatabaseWithResult(game, result);
-        Debug.Log($"[Quick Sim] Result: {game.AwayTeamAbbr} {result.AwayScore} @ {game.HomeTeamAbbr} {result.HomeScore}");
-    }
-
-    private void StartDetailedSimulation(Schedule game)
-    {
-        // 1. GameDataHolder에 경기 정보를 저장
-        GameDataHolder.CurrentGameInfo = game;
-        // 2. 게임 씬 로드
-        SceneManager.LoadScene("GameScene"); // 게임 씬의 이름
-    }
-
-    // 상세 시뮬레이션이 끝났을 때 이벤트에 의해 호출되는 콜백 함수
-    private void HandleGameFinished(GameResult result)
-    {
-        Debug.Log("Detailed simulation finished. Returning to season scene.");
-        Schedule finishedGame = GameDataHolder.CurrentGameInfo;
-        UpdateDatabaseWithResult(finishedGame, result);
-        
-        // 시즌 씬으로 복귀
-        SceneManager.LoadScene("SeasonScene"); // 메인 시즌 씬의 이름
-    }
-
-    // 씬이 로드된 후 호출될 함수
-    void OnSceneLoaded(Scene scene, LoadSceneMode mode)
-    {
-        // 시즌 씬으로 돌아왔을 때, 다음 날로 진행
-        if (scene.name == "SeasonScene")
-        {
-             // 바로 다음날로 진행하면 UI를 볼 시간이 없으므로,
-             // 이 로직은 SimulateNextDay 버튼을 다시 누르는 것으로 대체하거나,
-             // 약간의 딜레이 후 자동 진행시킬 수 있음.
-             // 여기서는 다음 날로 바로 진행하는 코드를 작성.
-             ProceedToNextDay();
+            _dayTimer -= realSecondsPerDay;
+            AdvanceDay();
         }
     }
 
-    // 공통 DB 업데이트 로직
-    private void UpdateDatabaseWithResult(Schedule game, GameResult result)
+    public int GetCurrentSeason()
     {
-        LocalDbManager.Instance.UpdateGameResult(game.GameId, result.HomeScore, result.AwayScore);
-        LocalDbManager.Instance.InsertPlayerStats(result.PlayerStats);
-        LocalDbManager.Instance.UpdateTeamWinLossRecord(game.HomeTeamAbbr, result.HomeScore > result.AwayScore, _currentSeason);
-        LocalDbManager.Instance.UpdateTeamWinLossRecord(game.AwayTeamAbbr, result.AwayScore > result.HomeScore, _currentSeason);
+        return _currentSeason;
     }
 
-    private void ProceedToNextDay()
+    private void AdvanceDay()
     {
         _currentDate = _currentDate.AddDays(1);
-        Debug.Log($"Advanced to next day: {_currentDate:yyyy-MM-dd}");
-        // 시즌 화면 UI 업데이트 로직 호출...
+        // Debug.Log($"날짜가 하루 지났습니다. 현재 날짜: {_currentDate.ToShortDateString()}");
+
+        // TODO: 경기 시뮬레이션 로직 호출
+
+        // [수정] 매주 월요일이 아닌, 매일 AI 트레이드 시도
+        AttemptAiToAiTrades();
+    }
+
+    /// <summary>
+    /// AI 팀들이 서로 트레이드를 시도하도록 하는 함수
+    /// </summary>
+    private void AttemptAiToAiTrades()
+    {
+        // 매일 호출되므로, 이 로그는 너무 자주 나타나지 않도록 주석 처리합니다.
+        // Debug.Log("AI 팀들의 트레이드 시장을 확인합니다...");
+
+        List<Team> allTeams = _dbManager.GetAllTeams();
+        var teamFinances = _dbManager.GetTeamFinancesForSeason(_currentSeason)
+                                     .ToDictionary(f => f.TeamAbbr);
+        
+        // 유저 팀을 제외한 AI 팀 목록
+        List<Team> aiTeams = allTeams.Where(t => t.team_abbv != _userTeamAbbr).ToList();
+        Team userTeam = allTeams.FirstOrDefault(t => t.team_abbv == _userTeamAbbr);
+
+        // AI <-> AI 트레이드
+        for (int i = 0; i < aiTeams.Count; i++)
+        {
+            for (int j = i + 1; j < aiTeams.Count; j++)
+            {
+                // [수정] 트레이드 빈도 상향 (1% -> 4%)
+                if (Random.Range(0, 100) < 25)
+                {
+                    ProposeTradeBetweenTeams(aiTeams[i], aiTeams[j], teamFinances);
+                }
+            }
+        }
+
+        // AI -> User 트레이드 제안
+        if (userTeam != null)
+        {
+            foreach (var aiTeam in aiTeams)
+            {
+                // [수정] 트레이드 빈도 상향 (0.3% -> 1.5%)
+                if (Random.Range(0, 1000) < 15)
+                {
+                    ProposeTradeBetweenTeams(aiTeam, userTeam, teamFinances, true);
+                }
+            }
+        }
+    }
+
+    private void ProposeTradeBetweenTeams(Team teamA, Team teamB, Dictionary<string, TeamFinance> finances, bool isUserTeamInvolved = false)
+    {
+        var financeA = finances.ContainsKey(teamA.team_abbv) ? finances[teamA.team_abbv] : null;
+        var financeB = finances.ContainsKey(teamB.team_abbv) ? finances[teamB.team_abbv] : null;
+
+        if (financeA != null && financeB != null)
+        {
+            GenerateAndProposeSmartTrade(teamA, financeA, teamB, financeB, isUserTeamInvolved);
+        }
+    }
+    
+    private enum TeamStrategy { Rebuilding, Contending, Standard }
+
+    private TeamStrategy GetTeamStrategy(TeamFinance finance)
+    {
+        float winPercentage = (finance.Wins + finance.Losses) == 0 ? 0.5f : (float)finance.Wins / (finance.Wins + finance.Losses);
+        if (winPercentage > 0.65) return TeamStrategy.Contending;
+        if (winPercentage < 0.35) return TeamStrategy.Rebuilding;
+        return TeamStrategy.Standard;
+    }
+    
+    private void GenerateAndProposeSmartTrade(Team teamA, TeamFinance financeA, Team teamB, TeamFinance financeB, bool isUserTeamInvolved = false)
+    {
+        var strategyA = GetTeamStrategy(financeA);
+        var strategyB = GetTeamStrategy(financeB);
+
+        // [수정] 동일 전략 팀 간 트레이드 중단 확률을 70% -> 30%로 완화
+        if (strategyA == strategyB && Random.Range(0, 100) < 30) return;
+
+        var rosterA = _dbManager.GetPlayersByTeam(teamA.team_abbv);
+        var rosterB = _dbManager.GetPlayersByTeam(teamB.team_abbv);
+
+        if (rosterA.Count < 8 || rosterB.Count < 8) return;
+
+        PlayerRating playerToTradeFromA = FindTradableAsset(rosterA, strategyA, strategyB);
+        PlayerRating playerToTradeFromB = FindTradableAsset(rosterB, strategyB, strategyA);
+
+        if (playerToTradeFromA == null || playerToTradeFromB == null) return;
+        
+        if (isUserTeamInvolved)
+        {
+            // TODO: 실제로는 UI 팝업을 띄우고 유저의 결정을 기다려야 함
+            // public static event Action<TradeOffer> OnTradeOfferedToUser;
+            // OnTradeOfferedToUser?.Invoke(new TradeOffer(teamA, playerToTradeFromA, teamB, playerToTradeFromB));
+            Debug.LogWarning($"[USER TRADE PROPOSAL] {teamA.team_abbv}에서 트레이드를 제안했습니다!");
+            Debug.LogWarning($"  - 주는 선수: {playerToTradeFromA.name} ({playerToTradeFromA.currentValue:F1})");
+            Debug.LogWarning($"  - 받는 선수: {playerToTradeFromB.name} ({playerToTradeFromB.currentValue:F1})");
+            // 지금은 자동으로 거절하는 것으로 처리
+            Debug.Log("  (자동으로 거절되었습니다.)");
+        }
+        else
+        {
+            Debug.Log($"[AI-AI Trade Proposal] {teamA.team_abbv} ({strategyA}) -> {teamB.team_abbv} ({strategyB})");
+            _tradeManager.EvaluateAndExecuteTrade(
+                teamA.team_abbv, new List<PlayerRating> { playerToTradeFromA },
+                teamB.team_abbv, new List<PlayerRating> { playerToTradeFromB }
+            );
+        }
+    }
+    
+    private PlayerRating FindTradableAsset(List<PlayerRating> roster, TeamStrategy myStrategy, TeamStrategy theirStrategy)
+    {
+        IEnumerable<PlayerRating> candidates;
+
+        if (myStrategy == TeamStrategy.Contending)
+        {
+            // 컨텐딩팀: 어리고 포텐 높은 선수(미래 가치)를 팔아 즉시 전력감(현재 가치)을 원함
+            candidates = roster.Where(p => (p.potential - p.overallAttribute) >= 8 && p.age < 25)
+                                 .OrderByDescending(p => p.currentValue);
+            
+            // [플랜 B] 팔만한 유망주가 없으면, 팀 내 최저 OVR 선수라도 팔아서 로스터를 정리하려 함
+            if (!candidates.Any())
+            {
+                candidates = roster.OrderBy(p => p.overallAttribute);
+            }
+        }
+        else if (myStrategy == TeamStrategy.Rebuilding)
+        {
+            // 리빌딩팀: 나이 많고 비싼 선수(현재 가치)를 팔아 유망주나 샐러리캡을 원함
+            candidates = roster.Where(p => p.age > 28 && p.currentValue > 40)
+                                 .OrderByDescending(p => p.currentValue);
+
+            // [플랜 B] 팔만한 베테랑이 없으면, 가치가 가장 높은 선수(에이스)를 팔아서 리빌딩 자원을 얻으려 함
+            if (!candidates.Any())
+            {
+                candidates = roster.OrderByDescending(p => p.currentValue);
+            }
+        }
+        else // Standard
+        {
+            // 스탠다드팀: 팀의 밸런스를 맞추기 위해, 주전급이 아닌 선수 중 가장 가치가 높은 선수를 트레이드 블록에 올림
+            candidates = roster.OrderByDescending(p => p.currentValue).Skip(5);
+        }
+
+        return candidates.FirstOrDefault();
     }
 }
