@@ -5,11 +5,17 @@ using System.Linq;
 
 public class ScheduleManager
 {
+    // Singleton instance so other managers can call ScheduleManager.Instance
+    private static readonly ScheduleManager _instance = new ScheduleManager();
+    public static ScheduleManager Instance => _instance;
+
+    // 외부에서 new 막기
+    private ScheduleManager() { }
+
     private List<Team> allTeams;
     private readonly DateTime seasonStartDate = new DateTime(2025, 10, 21);
     private readonly DateTime seasonEndDate = new DateTime(2026, 4, 15); // 마지막 날 포함
 
-    // SeasonManager가 호출하는 메인 함수
     public void GenerateNewSeasonSchedule(int season)
     {
         // 1. DB에서 모든 팀 정보를 가져옵니다.
@@ -242,8 +248,32 @@ public class ScheduleManager
             attempts++;
         }
 
-        // 500번 시도 후에도 못 찾으면 그냥 가능한 첫 날짜를 반환 (예외 처리)
-        Debug.LogWarning($"Could not find optimal date for {match.HomeTeamAbbr} vs {match.AwayTeamAbbr}. Placing on first available day.");
-        return seasonStartDate;
+        // 500번 시도 후에도 실패하면 시즌 기간을 순차적으로 스캔하여 가능한 가장 빠른 날짜를 찾는다.
+        for (int dayOffset = 0; dayOffset <= totalDays; dayOffset++)
+        {
+            DateTime date = seasonStartDate.AddDays(dayOffset);
+            string dateString = date.ToString("yyyy-MM-dd");
+
+            bool homeTeamBusy = teamLastPlayedDate.ContainsKey(match.HomeTeamAbbr) && teamLastPlayedDate[match.HomeTeamAbbr].Date == date.Date;
+            bool awayTeamBusy = teamLastPlayedDate.ContainsKey(match.AwayTeamAbbr) && teamLastPlayedDate[match.AwayTeamAbbr].Date == date.Date;
+            bool tooManyGamesToday = gamesOnDate.ContainsKey(dateString) && gamesOnDate[dateString] >= 12;
+
+            if (!homeTeamBusy && !awayTeamBusy && !tooManyGamesToday)
+            {
+                return date;
+            }
+        }
+
+        // 이론적으로 여기까지 오는 일은 거의 없지만, 마지막 안전장치로
+        Debug.LogWarning($"[ScheduleManager] No available date found without violating per-day rules for {match.HomeTeamAbbr} vs {match.AwayTeamAbbr}. Scheduling on season start but will still respect per-team rule.");
+
+        // 시즌 첫 날에 이미 같은 팀 경기가 있을 수 있으므로 한 팀이라도 중복이면 다음 날로 미룸
+        DateTime fallback = seasonStartDate;
+        while (teamLastPlayedDate.ContainsKey(match.HomeTeamAbbr) && teamLastPlayedDate[match.HomeTeamAbbr].Date == fallback.Date
+            || teamLastPlayedDate.ContainsKey(match.AwayTeamAbbr) && teamLastPlayedDate[match.AwayTeamAbbr].Date == fallback.Date)
+        {
+            fallback = fallback.AddDays(1);
+        }
+        return fallback;
     }
 }
