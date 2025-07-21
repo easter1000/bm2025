@@ -56,13 +56,11 @@ public class PlayerStatus
 {
     [PrimaryKey, AutoIncrement] public int Id { get; set; }
     [Indexed] public int PlayerId { get; set; }
-    public string ContractType { get; set; }
     public int YearsLeft { get; set; }
     public long Salary { get; set; }
     public int Stamina { get; set; }
     public bool IsInjured { get; set; }
     public int InjuryDaysLeft { get; set; }
-    public string LastChecked { get; set; }
 }
 
 // PlayerStat 클래스는 선수의 경기별 기록을 저장합니다.
@@ -92,7 +90,6 @@ public class User
     public string SelectedTeamAbbr { get; set; }
     public int CurrentSeason { get; set; }
     public string CurrentDate { get; set; }
-    public string LastSaved { get; set; }
 }
 
 // TeamFinance 테이블: 리그의 모든 팀 재정 정보를 관리합니다.
@@ -104,7 +101,6 @@ public class TeamFinance
     public int Wins { get; set; } // [추가됨]
     public int Losses { get; set; } // [추가됨]
     public long SalaryCap { get; set; }
-    public long LuxuryTaxThreshold { get; set; }
     public long CurrentTeamSalary { get; set; }
     public long TeamBudget { get; set; }
 }
