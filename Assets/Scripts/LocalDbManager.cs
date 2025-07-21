@@ -7,35 +7,19 @@ using System.Collections.Generic;
 
 public class LocalDbManager : MonoBehaviour
 {
-    private static LocalDbManager _instance;
-    public static LocalDbManager Instance
-    {
-        get
-        {
-            if (_instance == null)
-            {
-                _instance = FindFirstObjectByType<LocalDbManager>();
-                if (_instance == null)
-                {
-                    GameObject go = new GameObject("LocalDbManager");
-                    _instance = go.AddComponent<LocalDbManager>();
-                }
-            }
-            return _instance;
-        }
-    }
-
+    public static LocalDbManager Instance { get; private set; }
+    
     private SQLiteConnection _db;
     private string _dbPath;
 
     void Awake()
     {
-        if (_instance != null && _instance != this)
+        if (Instance != null && Instance != this)
         {
             Destroy(gameObject);
             return;
         }
-        _instance = this;
+        Instance = this;
         DontDestroyOnLoad(gameObject);
         InitializeDatabase();
     }
@@ -80,7 +64,7 @@ public class LocalDbManager : MonoBehaviour
 
         foreach (var p in playerList.players)
         {
-            float currentValue = CalculatePlayerCurrentValue(p.overallAttribute, p.age, p.contract_value);
+            float currentValue = CalculatePlayerCurrentValue(p.overallAttribute, p.age, p.potential, p.contract_value);
             ratings.Add(new PlayerRating
             {
                 player_id = p.player_id,
@@ -113,8 +97,20 @@ public class LocalDbManager : MonoBehaviour
                 potential = p.potential
             });
             statuses.Add(new PlayerStatus { PlayerId = p.player_id, YearsLeft = p.contract_years_left, Salary = p.contract_value, Stamina = 100, IsInjured = false, InjuryDaysLeft = 0});
+            
+            // [수정] 팀 연봉 총액을 '연봉' 기준으로 계산
+            long annualSalary = 0;
+            if (p.contract_years_left > 0)
+            {
+                annualSalary = p.contract_value / p.contract_years_left;
+            }
+            else
+            {
+                Debug.LogWarning($"Player {p.name} (ID: {p.player_id}) has 0 contract years left. Annual salary is calculated as 0.");
+            }
+
             if (!teamSalaries.ContainsKey(p.team)) teamSalaries[p.team] = 0;
-            teamSalaries[p.team] += p.contract_value;
+            teamSalaries[p.team] += annualSalary;
         }
         _db.InsertAll(ratings); _db.InsertAll(statuses);
         Debug.Log($"[DB] Populated PlayerRating and PlayerStatus with {playerList.players.Length} players.");
@@ -175,7 +171,17 @@ public class LocalDbManager : MonoBehaviour
         long currentSeasonSalaryCap = 141000000;
         foreach (var teamSalaryPair in teamSalaries)
         {
-            teamFinances.Add(new TeamFinance { TeamAbbr = teamSalaryPair.Key, Season = 2025, Wins = 0, Losses = 0, SalaryCap = currentSeasonSalaryCap, CurrentTeamSalary = teamSalaryPair.Value, TeamBudget = 200000000 });
+            teamFinances.Add(new TeamFinance 
+            { 
+                TeamAbbr = teamSalaryPair.Key, 
+                Season = 2025, 
+                Standing = 0, // [추가] 초기 등수 설정
+                Wins = 0, 
+                Losses = 0, 
+                SalaryCap = currentSeasonSalaryCap, 
+                CurrentTeamSalary = teamSalaryPair.Value, 
+                TeamBudget = 180000000 
+            });
         }
         _db.InsertAll(teamFinances);
         Debug.Log($"[DB] Populated TeamFinance for {teamFinances.Count} teams.");
@@ -274,27 +280,153 @@ public class LocalDbManager : MonoBehaviour
                  .Where(p => p.team == fullName || p.team == abbr)
                  .ToList();
     }
-    public PlayerStatus GetPlayerStatus(int playerId) => _db.Table<PlayerStatus>().FirstOrDefault(p => p.PlayerId == playerId);
+
+    public PlayerStatus GetPlayerStatus(int playerId)
+    {
+        return _db.Table<PlayerStatus>().FirstOrDefault(s => s.PlayerId == playerId);
+    }
+
     public void InsertPlayerStats(List<PlayerStat> stats) => _db.InsertAll(stats);
+
+    /// <summary>
+    /// 특정 선수를 DB에서 방출하여 FA(자유 계약) 상태로 만듭니다.
+    /// </summary>
+    public void ReleasePlayer(int playerId)
+    {
+        var rating = GetPlayerRating(playerId);
+        if (rating != null)
+        {
+            rating.team = "FA"; // Free Agent
+            _db.Update(rating);
+        }
+
+        var status = GetPlayerStatus(playerId);
+        if (status != null)
+        {
+            status.Salary = 0;
+            status.YearsLeft = 0;
+            _db.Update(status);
+        }
+    }
+
+    /// <summary>
+    /// 모든 팀의 현재 로스터를 기반으로 연봉 총액을 다시 계산하여 DB에 저장합니다.
+    /// </summary>
+    public void RecalculateAndSaveAllTeamSalaries()
+    {
+        var allTeams = GetAllTeams();
+        var allRatings = GetAllPlayerRatings();
+        var allStatuses = _db.Table<PlayerStatus>().ToList();
+
+        foreach (var team in allTeams)
+        {
+            var teamPlayers = allRatings.Where(p => p.team == team.team_abbv);
+            long totalAnnualSalary = 0;
+
+            foreach (var player in teamPlayers)
+            {
+                var status = allStatuses.FirstOrDefault(s => s.PlayerId == player.player_id);
+                if (status != null && status.YearsLeft > 0)
+                {
+                    totalAnnualSalary += status.Salary / status.YearsLeft;
+                }
+            }
+
+            var teamFinance = GetTeamFinance(team.team_abbv, 2025); // [주의] 현재 시즌을 가져오는 로직 필요
+            if (teamFinance != null)
+            {
+                teamFinance.CurrentTeamSalary = totalAnnualSalary;
+                _db.Update(teamFinance);
+            }
+        }
+        Debug.Log("[DB] All team salaries have been recalculated and updated.");
+    }
+
+    public List<TeamFinance> GetTeamFinancesForSeason(int season)
+    {
+        return _db.Table<TeamFinance>().Where(t => t.Season == season).ToList();
+    }
+
+    public void UpdatePlayerTeam(List<int> playerIds, string newTeamAbbr)
+    {
+        foreach (int playerId in playerIds)
+        {
+            var player = _db.Find<PlayerRating>(p => p.player_id == playerId);
+            if (player != null)
+            {
+                player.team = newTeamAbbr;
+                _db.Update(player);
+            }
+        }
+    }
 
     #endregion
 
     #region Value Calculation Helpers
-    private float CalculatePlayerCurrentValue(int overall, int age, long salary)
+    
+    // [핵심 수정] 새로운 선수 가치 평가 시스템
+    private float CalculatePlayerCurrentValue(int overall, int age, int potential, long salary)
     {
-        float value = overall * 10.0f;
-        float agePenalty = Mathf.Max(0, age - 28) * 7.5f;
-        value -= agePenalty;
-        long marketValue = GetMarketValueByOverall(overall);
-        float contractBonus = (float)(marketValue - salary) / 1000000;
-        value += contractBonus;
-        return Mathf.Max(1.0f, value);
+        // 1. 성과 가치 (Performance Value): OVR이 높을수록 기하급수적으로 증가 (영향력 상향: 2.5f -> 2.8f)
+        float performanceValue = Mathf.Pow(overall / 10f, 3.3f);
+
+        // 2. 미래 가치 (Potential Value): 나이가 어리고 잠재력이 높을수록 폭발적으로 증가
+        float potentialGap = potential - overall;
+        float ageFactor = Mathf.Max(0, 30 - age) * 0.2f; // 30세 미만일수록 가치 상승
+        float potentialValue = potentialGap * ageFactor * 2.5f;
+
+        // 3. 계약 가치 (Contract Value): 적정 연봉 대비 실제 연봉이 얼마나 저렴한가
+        long marketValue = GetMarketValue(overall, age);
+        float contractValue = (float)(marketValue - salary) / 500000f; // 50만 달러당 1점
+
+        float totalValue = performanceValue + potentialValue + contractValue;
+        return Mathf.Max(1.0f, ConvertValueToMarketSalary(totalValue)); // 최소 가치는 1로 보정
     }
-    private long GetMarketValueByOverall(int overall)
+
+    /// <summary>
+    /// [신규] 선수의 현재 가치(currentValue)를 시장가(연봉)로 변환하는 '번역기' 함수
+    /// </summary>
+    public long ConvertValueToMarketSalary(float currentValue)
     {
-        if (overall >= 95) return 50000000; if (overall >= 90) return 40000000; if (overall >= 85) return 30000000;
-        if (overall >= 80) return 20000000; if (overall >= 75) return 12000000; if (overall >= 70) return 5000000;
-        return 2000000;
+        // 기준이 되는 가치와 연봉 범위
+        const float VALUE_MIN = 550f;
+        const float VALUE_MAX = 1660f;
+        const long SALARY_MIN = 2000000;
+        const long SALARY_MAX = 60000000;
+
+        // 가치가 최소보다 낮으면 최소 연봉 반환
+        if (currentValue <= VALUE_MIN) return SALARY_MIN;
+        // 가치가 최대보다 높으면 최대 연봉 반환
+        if (currentValue >= VALUE_MAX) return SALARY_MAX;
+
+        // 두 범위 사이를 선형적으로 비례 계산 (Linear Interpolation)
+        float percentage = (currentValue - VALUE_MIN) / (VALUE_MAX - VALUE_MIN);
+        long salary = SALARY_MIN + (long)(percentage * (SALARY_MAX - SALARY_MIN));
+
+        // 실제 연봉처럼 보이기 위해 만 단위로 반올림
+        return (long)(Mathf.Round(salary / 10000f) * 10000f);
+    }
+
+    // [핵심 수정] 적정 시장 연봉 계산기: OVR과 나이를 모두 고려
+    private long GetMarketValue(int overall, int age)
+    {
+        long baseValue;
+        if (overall >= 95) baseValue = 55000000;
+        else if (overall >= 90) baseValue = 45000000;
+        else if (overall >= 85) baseValue = 35000000;
+        else if (overall >= 80) baseValue = 25000000;
+        else if (overall >= 75) baseValue = 15000000;
+        else if (overall >= 70) baseValue = 8000000;
+        else if (overall >= 65) baseValue = 4000000;
+        else baseValue = 2000000; // 최저 연봉
+
+        // 나이에 따른 가치 조정: 26세 이하 유망주에게는 보너스, 32세 이상 베테랑에게는 페널티
+        if (age <= 22) baseValue = (long)(baseValue * 1.3f);
+        else if (age <= 26) baseValue = (long)(baseValue * 1.15f);
+        else if (age >= 32) baseValue = (long)(baseValue * 0.8f);
+        else if (age >= 35) baseValue = (long)(baseValue * 0.6f);
+
+        return baseValue;
     }
     #endregion
 

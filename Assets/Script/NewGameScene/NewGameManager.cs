@@ -264,9 +264,18 @@ public class NewGameManager : MonoBehaviour
     private void OnTeamConfirmed()
     {
         if (selectedTeam == null) return;
-        PlayerPrefs.SetInt(SelectedTeamIdKey, selectedTeam.teamId);
-        PlayerPrefs.Save();
-        SwitchStep(Step.NameInput);
+        
+        // 1. 유저 정보 저장
+        string coachName = coachNameInputField.text;
+        string teamAbbr = selectedTeam.abbreviation;
+        int season = 2025;
+        LocalDbManager.Instance.SaveOrUpdateUser(coachName, teamAbbr, season);
+        
+        // 2. [핵심 추가] 모든 팀의 로스터를 15명으로 조정
+        RosterManager.AdjustAllRostersToSeasonStart();
+
+        // 3. 팀 인트로 단계로 전환
+        SwitchStep(Step.TeamIntro);
     }
 
     #endregion

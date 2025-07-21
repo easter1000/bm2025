@@ -1,85 +1,122 @@
 using UnityEngine;
-using UnityEngine.UI;
 using System.Collections.Generic;
 using System.Linq;
+using madcamp3.Assets.Script.Player;
+using UnityEngine.UI;
 
+// 3단 트레이드 레이아웃을 총괄하는 메인 컨트롤러
 public class TradeSceneManager : MonoBehaviour
 {
-    [SerializeField]
-    private GameObject teamLogoButtonPrefab;
+    [Header("Column Contents")]
+    [SerializeField] private Transform myRosterContent;
+    [SerializeField] private Transform opponentRosterContent;
 
-    [SerializeField]
-    private Transform gridParent;
+    [Header("Detail Controller")]
+    [SerializeField] private PlayerDetailUI playerDetailUI; 
+    
+    [Header("Prefabs")]
+    [SerializeField] private GameObject playerLineUIPrefab;
+
+    private PlayerLineController _currentlySelectedLine;
+    private Color _defaultBgColorEven = new Color32(242, 242, 242, 255);
+    private Color _defaultBgColorOdd = new Color32(229, 229, 229, 255);
+    private Color _highlightColor = new Color32(173, 216, 230, 255); // LightBlue
 
     void Start()
     {
-        GenerateTeamGrid();
+        InitializeScene();
     }
 
-    private void GenerateTeamGrid()
+    private void InitializeScene()
     {
-        User userInfo = LocalDbManager.Instance.GetUser();
-        if (userInfo == null)
+        if (playerDetailUI != null)
         {
-            Debug.LogError("User info not found! Cannot generate team grid.");
-            return;
+            playerDetailUI.gameObject.SetActive(false);
         }
+        
+        string targetTeamAbbr = "UTA"; 
+        User userInfo = LocalDbManager.Instance.GetUser();
         string myTeamAbbr = userInfo.SelectedTeamAbbr;
 
-        List<Team> allTeams = LocalDbManager.Instance.GetAllTeams();
-        List<string> allTeamAbbrs = allTeams.OrderBy(t => t.team_abbv)
-                                             .Select(t => t.team_abbv)
-                                             .ToList();
+        PopulateRosterColumn(myTeamAbbr, myRosterContent);
+        PopulateRosterColumn(targetTeamAbbr, opponentRosterContent);
+    }
+    
+    private void PopulateRosterColumn(string teamAbbr, Transform contentParent)
+    {
+        foreach (Transform child in contentParent) Destroy(child.gameObject);
+
+        var players = LocalDbManager.Instance.GetPlayersByTeam(teamAbbr)
+                                     .OrderByDescending(p => p.overallAttribute)
+                                     .ToList();
+
+        for (int i = 0; i < players.Count; i++)
+        {
+            var player = players[i];
+            GameObject itemGO = Instantiate(playerLineUIPrefab, contentParent);
+            var lineController = itemGO.GetComponent<PlayerLineController>();
+
+            if (lineController != null)
+            {
+                Color bgColor = (i % 2 == 0) ? _defaultBgColorEven : _defaultBgColorOdd;
+                
+                PlayerLine lineData = ConvertRatingToLine(player);
+                
+                lineController.SetPlayerLine(lineData, bgColor);
+                lineController.OnClicked += (line) => HandlePlayerLineClicked(lineController, player);
+            }
+        }
+    }
+    
+    private void HandlePlayerLineClicked(PlayerLineController clickedLine, PlayerRating clickedPlayerRating)
+    {
+        // 1. 이전에 선택된 라인이 있었다면 원래 배경색으로 복원
+        if (_currentlySelectedLine != null && _currentlySelectedLine.GetComponent<Image>() != null)
+        {
+            bool isEven = _currentlySelectedLine.transform.GetSiblingIndex() % 2 == 0;
+            _currentlySelectedLine.GetComponent<Image>().color = isEven ? _defaultBgColorEven : _defaultBgColorOdd;
+        }
+
+        // 2. 새로 클릭된 라인을 현재 선택된 라인으로 지정하고 하이라이트
+        _currentlySelectedLine = clickedLine;
+        if(_currentlySelectedLine.GetComponent<Image>() != null)
+        {
+            _currentlySelectedLine.GetComponent<Image>().color = _highlightColor;
+        }
         
-        int myTeamIndex = allTeamAbbrs.IndexOf(myTeamAbbr);
-        if (myTeamIndex != -1)
+        // 3. 상세 정보 UI에 클릭된 선수의 데이터를 표시
+        if (playerDetailUI != null)
         {
-            allTeamAbbrs[myTeamIndex] = "nba";
-        }
-
-        foreach (Transform child in gridParent)
-        {
-            Destroy(child.gameObject);
-        }
-
-        foreach (string teamAbbr in allTeamAbbrs)
-        {
-            InstantiateTeamButton(teamAbbr);
+            if (!playerDetailUI.gameObject.activeSelf)
+            {
+                playerDetailUI.gameObject.SetActive(true);
+            }
+            playerDetailUI.SetPlayer(clickedPlayerRating);
         }
     }
-
-    private void InstantiateTeamButton(string abbr)
+    
+    private PlayerLine ConvertRatingToLine(PlayerRating rating)
     {
-        GameObject buttonGO = Instantiate(teamLogoButtonPrefab, gridParent);
-        buttonGO.name = "Button_" + abbr;
-
-        Image buttonImage = buttonGO.GetComponent<Image>();
-        Sprite logoSprite = Resources.Load<Sprite>("team_photos/" + abbr);
-
-        if (logoSprite != null)
+        return new PlayerLine
         {
-            buttonImage.sprite = logoSprite;
-        }
-        else
-        {
-            Debug.LogWarning($"Logo for {abbr} not found in Resources/TeamLogos/");
-        }
-
-        Button button = buttonGO.GetComponent<Button>();
-        button.onClick.AddListener(() => OnTeamLogoClicked(abbr));
+            PlayerName = rating.name,
+            Position = PositionCodeToString(rating.position),
+            BackNumber = rating.backNumber,
+            Age = rating.age,
+            Height = rating.height,
+            Weight = rating.weight,
+            OverallScore = rating.overallAttribute,
+            Potential = rating.potential,
+            PlayerId = rating.player_id
+        };
     }
 
-    public void OnTeamLogoClicked(string teamAbbr)
+    private string PositionCodeToString(int code)
     {
-        if (teamAbbr == "FA")
+        return code switch
         {
-            Debug.Log("Navigate to Free Agent Market.");
-            // ex: SceneManager.LoadScene("FreeAgentScene");
-        }
-        else
-        {
-            Debug.Log($"Selected Team: {teamAbbr}. Showing their tradeable players.");
-            // ex: PlayerListPanel.ShowPlayersForTrade(teamAbbr);
-        }
+            1 => "PG", 2 => "SG", 3 => "SF", 4 => "PF", 5 => "C",
+            _ => "?"
+        };
     }
 }
