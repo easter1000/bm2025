@@ -1691,6 +1691,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   txtTeamName: {fileID: 2714254720290341722}
   txtAbbreviation: {fileID: 1692034298535090582}
+  imgTeamLogo: {fileID: 4436374924782134122}
   pgPlayer: {fileID: 4512885494152683602}
   sgPlayer: {fileID: 4879391840506096967}
   sfPlayer: {fileID: 4432155068913968929}
@@ -2902,7 +2903,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   m_Material: {fileID: 0}
-  m_Color: {r: 0.16078432, g: 0.21960784, b: 0.3019608, a: 1}
+  m_Color: {r: 1, g: 1, b: 1, a: 1}
   m_RaycastTarget: 1
   m_RaycastPadding: {x: 0, y: 0, z: 0, w: 0}
   m_Maskable: 1

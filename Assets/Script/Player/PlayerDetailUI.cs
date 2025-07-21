@@ -63,7 +63,7 @@ namespace madcamp3.Assets.Script.Player
             if (txtAge) txtAge.text = rating.age.ToString();
             if (txtHeight) txtHeight.text = rating.height;
             if (txtWeight) txtWeight.text = rating.weight.ToString();
-            if (txtBackNumber) txtBackNumber.text = rating.backNumber.ToString();
+            if (txtBackNumber) txtBackNumber.text = rating.backNumber;
             if (txtPosition) txtPosition.text = PositionCodeToString(rating.position);
 
             // 포트레이트 로드

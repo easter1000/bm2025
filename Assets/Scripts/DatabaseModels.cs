@@ -25,7 +25,7 @@ public class PlayerRating
     public string team { get; set; }
     public int age { get; set; }
     public int position { get; set; }
-    public string backNumber { get; set; } // int -> string
+    public string backNumber { get; set; }
     public string height { get; set; }  // "6-5" 형식
     public int weight { get; set; }     // 파운드(lb)
     public int overallAttribute { get; set; }

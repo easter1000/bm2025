@@ -10,7 +10,7 @@ namespace madcamp3.Assets.Script.Player
     public class PlayerLine
     {
         public string Position;
-        public string BackNumber; // int -> string
+        public string BackNumber;
         public string PlayerName;
         public int Age;
         public string Height;   // 예: "6'3\""
