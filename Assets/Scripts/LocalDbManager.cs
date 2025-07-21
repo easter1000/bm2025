@@ -49,11 +49,13 @@ public class LocalDbManager : MonoBehaviour
         if (firstRun)
         {
             Debug.Log("[DB] First run: Creating and populating database...");
+            _db.CreateTable<Team>();
             _db.CreateTable<PlayerRating>();
             _db.CreateTable<PlayerStatus>();
             _db.CreateTable<PlayerStat>();
             _db.CreateTable<User>();
             _db.CreateTable<TeamFinance>();
+            _db.CreateTable<Schedule>(); // Schedule 테이블 생성 추가
             Debug.Log("[DB] Tables created.");
             PopulateInitialData();
         }
@@ -66,21 +68,19 @@ public class LocalDbManager : MonoBehaviour
 
     private void PopulateInitialData()
     {
-        TextAsset ta = Resources.Load<TextAsset>("players");
-        if (ta == null) { Debug.LogError("[DB] players.json not found!"); return; }
-
-        PlayerMasterDataList masterList = JsonUtility.FromJson<PlayerMasterDataList>(ta.text);
-        if (masterList == null || masterList.players == null) { Debug.LogError("[DB] Failed to parse players.json."); return; }
+        // --- 1. 선수 데이터 로드 및 처리 ---
+        TextAsset playersJson = Resources.Load<TextAsset>("players");
+        if (playersJson == null) { Debug.LogError("[DB] players.json not found!"); return; }
+        PlayerMasterDataList playerList = JsonUtility.FromJson<PlayerMasterDataList>(playersJson.text);
+        if (playerList == null || playerList.players == null) { Debug.LogError("[DB] Failed to parse players.json."); return; }
 
         var ratings = new List<PlayerRating>();
         var statuses = new List<PlayerStatus>();
         var teamSalaries = new Dictionary<string, long>();
 
-        foreach (var p in masterList.players)
+        foreach (var p in playerList.players)
         {
-            // [수정됨] 선수의 현재 가치를 계산
             float currentValue = CalculatePlayerCurrentValue(p.overallAttribute, p.age, p.contract_value);
-
             ratings.Add(new PlayerRating
             {
                 player_id = p.player_id,
@@ -112,91 +112,108 @@ public class LocalDbManager : MonoBehaviour
                 defensiveRebound = p.defensiveRebound,
                 potential = p.potential
             });
-
-            statuses.Add(new PlayerStatus
-            {
-                PlayerId = p.player_id,
-                ContractType = "Standard",
-                YearsLeft = p.contract_years_left,
-                Salary = p.contract_value,
-                Stamina = 100,
-                IsInjured = false,
-                InjuryDaysLeft = 0,
-                LastChecked = DateTime.UtcNow.ToString("s")
-            });
-
-            if (!teamSalaries.ContainsKey(p.team))
-            {
-                teamSalaries[p.team] = 0;
-            }
+            statuses.Add(new PlayerStatus { PlayerId = p.player_id, ContractType = "Standard", YearsLeft = p.contract_years_left, Salary = p.contract_value, Stamina = 100, IsInjured = false, InjuryDaysLeft = 0, LastChecked = DateTime.UtcNow.ToString("s") });
+            if (!teamSalaries.ContainsKey(p.team)) teamSalaries[p.team] = 0;
             teamSalaries[p.team] += p.contract_value;
         }
-        _db.InsertAll(ratings);
-        _db.InsertAll(statuses);
-        Debug.Log($"[DB] Populated PlayerRating and PlayerStatus with {masterList.players.Length} players.");
+        _db.InsertAll(ratings); _db.InsertAll(statuses);
+        Debug.Log($"[DB] Populated PlayerRating and PlayerStatus with {playerList.players.Length} players.");
 
+        // --- 2. 팀 데이터 로드 및 처리 ---
+        TextAsset teamsJson = Resources.Load<TextAsset>("teams");
+        if (teamsJson == null) { Debug.LogError("[DB] teams.json not found!"); return; }
+        TeamMasterDataList teamList = JsonUtility.FromJson<TeamMasterDataList>(teamsJson.text);
+        if (teamList == null || teamList.teams == null) { Debug.LogError("[DB] Failed to parse teams.json."); return; }
+        
+        var teams = new List<Team>();
+        foreach (var t in teamList.teams)
+        {
+            List<int> starterIds = new List<int>();
+            var playersInTeam = ratings.Where(p => p.team == t.team_abbv).ToList();
+            for (int pos = 1; pos <= 5; pos++)
+            {
+                var bestPlayerForPosition = playersInTeam.Where(p => p.position == pos).OrderByDescending(p => p.overallAttribute).FirstOrDefault();
+                starterIds.Add(bestPlayerForPosition != null ? bestPlayerForPosition.player_id : 0);
+            }
+            teams.Add(new Team { team_id = t.team_id, team_name = t.team_name, team_abbv = t.team_abbv, conference = t.conference, division = t.division, team_color = t.team_color, team_logo = t.team_logo, best_five = string.Join(",", starterIds) });
+        }
+        _db.InsertAll(teams);
+        Debug.Log($"[DB] Populated Team with {teams.Count} teams and calculated best five.");
+
+        // --- 3. 팀 재정 데이터 처리 ---
         var teamFinances = new List<TeamFinance>();
-        long currentSeasonSalaryCap = 141000000;
-        long currentSeasonLuxuryTax = 171315000;
-
+        long currentSeasonSalaryCap = 141000000; long currentSeasonLuxuryTax = 171315000;
         foreach (var teamSalaryPair in teamSalaries)
         {
-            teamFinances.Add(new TeamFinance
-            {
-                TeamAbbr = teamSalaryPair.Key,
-                Season = 2025,
-                SalaryCap = currentSeasonSalaryCap,
-                LuxuryTaxThreshold = currentSeasonLuxuryTax,
-                CurrentTeamSalary = teamSalaryPair.Value,
-                TeamBudget = 200000000
-            });
+            teamFinances.Add(new TeamFinance { TeamAbbr = teamSalaryPair.Key, Season = 2025, Wins = 0, Losses = 0, SalaryCap = currentSeasonSalaryCap, LuxuryTaxThreshold = currentSeasonLuxuryTax, CurrentTeamSalary = teamSalaryPair.Value, TeamBudget = 200000000 });
         }
         _db.InsertAll(teamFinances);
         Debug.Log($"[DB] Populated TeamFinance for {teamFinances.Count} teams.");
     }
 
-    #region Value Calculation Helpers
-    // [신규] 선수의 현재 가치를 계산하는 헬퍼 함수
-    private float CalculatePlayerCurrentValue(int overall, int age, long salary)
+    #region Public DB Accessors
+    
+    // --- User ---
+    public User GetUser() => _db.Table<User>().FirstOrDefault();
+
+    // --- Team & Schedule ---
+    public List<Team> GetAllTeams() => _db.Table<Team>().ToList();
+    public Team GetTeam(string teamAbbr) => _db.Table<Team>().FirstOrDefault(t => t.team_abbv == teamAbbr);
+    public Team GetTeam(int teamId) => _db.Find<Team>(teamId);
+    public TeamFinance GetTeamFinance(string teamAbbr, int season) => _db.Table<TeamFinance>().FirstOrDefault(f => f.TeamAbbr == teamAbbr && f.Season == season);
+    public void ClearScheduleTable() { _db.DropTable<Schedule>(); _db.CreateTable<Schedule>(); Debug.Log("[DB] Schedule table cleared and recreated."); }
+    public void InsertSchedule(List<Schedule> schedule) => _db.InsertAll(schedule);
+    public List<Schedule> GetGamesForDate(string date) => _db.Table<Schedule>().Where(g => g.GameDate == date && g.GameStatus == "Scheduled").ToList();
+    public void UpdateGameResult(string gameId, int homeScore, int awayScore)
     {
-        // 1. OVR 기반 기본 가치 (OVR 1점당 10점)
-        float value = overall * 10.0f;
-
-        // 2. 나이 페널티 적용 (28세를 기준으로 1살 많아질 때마다 7.5점씩 감점)
-        float agePenalty = Mathf.Max(0, age - 28) * 7.5f;
-        value -= agePenalty;
-
-        // 3. 계약 효율성 보너스/페널티 (연봉과 시장가치의 차이를 점수화)
-        long marketValue = GetMarketValueByOverall(overall);
-        // (시장가치 - 실제 연봉)을 100만 달러당 1점으로 환산하여 가감
-        float contractBonus = (float)(marketValue - salary) / 1000000;
-        value += contractBonus;
-
-        return Mathf.Max(1.0f, value); // 가치가 음수가 되지 않도록 최소 1점으로 보정
+        var game = _db.Find<Schedule>(gameId);
+        if (game != null) { game.HomeTeamScore = homeScore; game.AwayTeamScore = awayScore; game.GameStatus = "Final"; _db.Update(game); }
     }
-
-    // [신규] OVR에 따른 선수의 시장 가치(적정 연봉)를 반환하는 헬퍼 함수
-    private long GetMarketValueByOverall(int overall)
+    public void UpdateTeamWinLossRecord(string teamAbbr, bool won, int season)
     {
-        if (overall >= 95) return 50000000;  // 슈퍼맥스급
-        if (overall >= 90) return 40000000;  // 맥스급
-        if (overall >= 85) return 30000000;  // 올스타급
-        if (overall >= 80) return 20000000;  // 준수한 주전급
-        if (overall >= 75) return 12000000;  // 주전/상위 벤치
-        if (overall >= 70) return 5000000;   // 벤치 롤플레이어
-        return 2000000;                      // 최저 연봉급
+        var teamFinance = GetTeamFinance(teamAbbr, season);
+        if (teamFinance != null)
+        {
+            if (won) teamFinance.Wins++;
+            else teamFinance.Losses++;
+            _db.Update(teamFinance);
+        }
     }
+    public List<Schedule> GetScheduleForTeam(string teamAbbr, int season)
+    {
+        // 특정 팀의 한 시즌 전체 경기 일정을 가져옵니다.
+        return _db.Table<Schedule>()
+                .Where(g => (g.HomeTeamAbbr == teamAbbr || g.AwayTeamAbbr == teamAbbr) && g.Season == season)
+                .OrderBy(g => g.GameDate)
+                .ToList();
+    }
+    // --- Player ---
+    public PlayerRating GetPlayerRating(int playerId) => _db.Find<PlayerRating>(playerId);
+    public List<PlayerRating> GetAllPlayerRatings() => _db.Table<PlayerRating>().ToList();
+    public List<PlayerRating> GetPlayersByTeam(string teamAbbr) => _db.Table<PlayerRating>().Where(p => p.team == teamAbbr).ToList();
+    public PlayerStatus GetPlayerStatus(int playerId) => _db.Table<PlayerStatus>().FirstOrDefault(p => p.PlayerId == playerId);
+    public void InsertPlayerStats(List<PlayerStat> stats) => _db.InsertAll(stats);
+
     #endregion
 
-    public List<PlayerRating> GetAllPlayerRatings()
+    #region Value Calculation Helpers
+    private float CalculatePlayerCurrentValue(int overall, int age, long salary)
     {
-        return _db.Table<PlayerRating>().ToList();
+        float value = overall * 10.0f;
+        float agePenalty = Mathf.Max(0, age - 28) * 7.5f;
+        value -= agePenalty;
+        long marketValue = GetMarketValueByOverall(overall);
+        float contractBonus = (float)(marketValue - salary) / 1000000;
+        value += contractBonus;
+        return Mathf.Max(1.0f, value);
     }
-
-    public PlayerStatus GetPlayerStatus(int playerId)
+    private long GetMarketValueByOverall(int overall)
     {
-        return _db.Table<PlayerStatus>().FirstOrDefault(p => p.PlayerId == playerId);
+        if (overall >= 95) return 50000000; if (overall >= 90) return 40000000; if (overall >= 85) return 30000000;
+        if (overall >= 80) return 20000000; if (overall >= 75) return 12000000; if (overall >= 70) return 5000000;
+        return 2000000;
     }
+    #endregion
 
     void OnDestroy()
     {
@@ -239,11 +256,12 @@ public class LocalDbManager : MonoBehaviour
         public int offensiveRebound;
         public int defensiveRebound;
         public int potential;
+
     }
 
-    [Serializable]
-    public class PlayerMasterDataList
-    {
-        public PlayerMasterData[] players;
-    }
+    #region JSON Helper Classes
+    [Serializable] public class PlayerMasterDataList { public PlayerMasterData[] players; }
+    [Serializable] public class TeamMasterData { public int team_id; public string team_name; public string team_abbv; public string conference; public string division; public string team_color; public string team_logo; }
+    [Serializable] public class TeamMasterDataList { public TeamMasterData[] teams; }
+    #endregion
 }

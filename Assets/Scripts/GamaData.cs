@@ -19,6 +19,25 @@ public class GamePlayer
         TeamId = teamId;
         Stats = new LivePlayerStats();
     }
+
+    public PlayerStat ExportToPlayerStat(int playerId, int season, string gameId)
+    {
+        return new PlayerStat
+        {
+            PlayerId = playerId,
+            Season = season,
+            GameId = gameId,
+            MinutesPlayed = this.Stats.MinutesPlayedInSeconds / 60, // 초를 분으로 변환
+            Points = this.Stats.Points,
+            Assists = this.Stats.Assists,
+            Rebounds = this.Stats.OffensiveRebounds + this.Stats.DefensiveRebounds,
+            Steals = this.Stats.Steals,
+            Blocks = this.Stats.Blocks,
+            Turnovers = this.Stats.Turnovers,
+            RecordedAt = System.DateTime.UtcNow.ToString("s")
+            // 필요하다면 PlayerStat DB 모델에 필드를 추가하고 여기서 더 많은 스탯을 매핑할 수 있습니다.
+        };
+    }
 }
 
 // 한 경기에 대한 선수의 실시간 스탯 (DB의 PlayerStat과 구조가 동일)
@@ -45,6 +64,11 @@ public class LivePlayerStats
 // 경기의 현재 상태를 관리
 public class GameState
 {
+    public string HomeTeamName { get; set; }
+    public string AwayTeamName { get; set; }
+    public int Season { get; set; }
+    public string GameId { get; set; }
+
     public int Quarter { get; set; } = 1;
     public float GameClockSeconds { get; set; } = 720f; // 12분
     public float ShotClockSeconds { get; set; } = 24f;

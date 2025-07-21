@@ -11,6 +11,12 @@ EditorBuildSettings:
   - enabled: 1
     path: Assets/Scenes/NewGameScene.unity
     guid: 076d002bd64c1eb4d88e1d56dbfb1812
+  - enabled: 1
+    path: Assets/Scenes/SeasonScene.unity
+    guid: 4c75d7cf262a8174aa1c34e4ee2b069b
+  - enabled: 1
+    path: Assets/Scenes/GameScene.unity
+    guid: 4fcc46d210ab33d498c5456f69202267
   m_configObjects:
     com.unity.input.settings.actions: {fileID: -944628639613478452, guid: 2bcd2660ca9b64942af0de543d8d7100, type: 3}
   m_UseUCBPForAssetBundles: 0
