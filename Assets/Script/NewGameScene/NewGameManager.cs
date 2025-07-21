@@ -341,7 +341,7 @@ public class NewGameManager : MonoBehaviour
             GameObject obj = new GameObject("SeasonManager");
             sm = obj.AddComponent<SeasonManager>();
         }
-        sm.StartNewSeason(season);
+        sm.InitializeNewSeason(season, selectedTeam.abbreviation);
     }
 
     #region Dummy Data

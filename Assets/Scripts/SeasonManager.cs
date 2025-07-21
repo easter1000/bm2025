@@ -50,6 +50,17 @@ public class SeasonManager : MonoBehaviour
         Debug.Log($"시즌 {_currentSeason}을 시작합니다. 현재 날짜: {_currentDate.ToShortDateString()}");
     }
 
+    public void InitializeNewSeason(int season, string userTeamAbbr)
+    {
+        _currentSeason = season;
+        _userTeamAbbr = userTeamAbbr;
+        _currentDate = new System.DateTime(_currentSeason - 1, 10, 1);
+        _dbManager = LocalDbManager.Instance; // DB 매니저 인스턴스 확인
+        _tradeManager = FindAnyObjectByType<TradeManager>();
+        
+        Debug.Log($"새로운 시즌 {_currentSeason}이(가) 팀 {userTeamAbbr}와(과) 함께 시작됩니다. 현재 날짜: {_currentDate.ToShortDateString()}");
+    }
+
     void Update()
     {
         _dayTimer += Time.deltaTime;
