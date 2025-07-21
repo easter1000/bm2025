@@ -1,5 +1,6 @@
 using UnityEngine;
 using System.Linq;
+using System.Collections.Generic;
 
 // --- 조건 노드: 3점슛을 쏠 만한 상황인가? ---
 public class Condition_IsOpenFor3 : ConditionNode
@@ -8,7 +9,7 @@ public class Condition_IsOpenFor3 : ConditionNode
     {
         var adjustedRating = simulator.GetAdjustedRating(player);
 
-        float tendency = 25f; 
+        float tendency = 25f;
         tendency += (player.Rating.overallAttribute - 85) * 0.25f;
 
         bool willTry3Pointer = adjustedRating.threePointShot > 75 && Random.Range(0, 100) < tendency;
@@ -27,7 +28,7 @@ public class Condition_CanDrive : ConditionNode
         float driveTendency = 20 + (adjustedRating.drivingDunk + adjustedRating.layup) / 2.0f * 0.3f;
         driveTendency += (player.Rating.overallAttribute - 85) * 0.3f;
         if (Random.Range(0, 100) >= driveTendency) return NodeState.FAILURE;
-        
+
         var defender = simulator.GetRandomDefender(player.TeamId);
         var adjustedDefenderRating = simulator.GetAdjustedRating(defender);
 
@@ -45,7 +46,7 @@ public class Condition_IsGoodPassOpportunity : ConditionNode
     {
         var teammates = simulator.GetPlayersOnCourt(player.TeamId).Where(p => p != player).ToList();
         if (teammates.Count == 0) return NodeState.FAILURE;
-        
+
         var bestTeammate = teammates.OrderByDescending(p => p.Rating.overallAttribute).First();
 
         float passValue = (bestTeammate.Rating.overallAttribute - player.Rating.overallAttribute) * 0.5f;
@@ -60,14 +61,13 @@ public class Condition_IsGoodPassOpportunity : ConditionNode
     }
 }
 
-
 // --- 조건 노드: 미드레인지 슛을 쏠 만한 상황인가? ---
 public class Condition_IsGoodForMidRange : ConditionNode
 {
     public override NodeState Evaluate(GameSimulator simulator, GamePlayer player)
     {
         var adjustedRating = simulator.GetAdjustedRating(player);
-        
+
         float tendency = 34f;
         tendency += (player.Rating.overallAttribute - 85) * 0.25f;
 
@@ -79,7 +79,6 @@ public class Condition_IsGoodForMidRange : ConditionNode
         return NodeState.FAILURE;
     }
 }
-
 
 // --- 액션 노드: 3점슛 시도 ---
 public class Action_Try3PointShot : ActionNode
@@ -96,23 +95,23 @@ public class Action_Try3PointShot : ActionNode
         {
             return simulator.ResolveShootingFoul(player, defender, 3);
         }
-        
+
         player.Stats.FieldGoalsAttempted++;
         player.Stats.ThreePointersAttempted++;
 
         float baseChance = 36f;
         float ratingModifier = (adjustedRating.threePointShot - 75) * 0.5f - (adjustedDefenderRating.perimeterDefense - 75) * 0.5f;
-        
+
         float passIQBonus = 0f;
         if (simulator.CurrentState.LastPasser != null)
         {
             float passerIQ = simulator.CurrentState.LastPasser.Rating.passIQ;
             if (passerIQ > 75)
             {
-                passIQBonus = (passerIQ - 75) * 0.2f; // passIQ 75-99 -> 0-4.8 bonus
+                passIQBonus = (passerIQ - 75) * 0.2f;
             }
         }
-        
+
         float successChance = Mathf.Clamp(baseChance + ratingModifier + passIQBonus, 15f, 65f);
 
         if (Random.Range(0, 100) < successChance)
@@ -120,7 +119,7 @@ public class Action_Try3PointShot : ActionNode
             player.Stats.Points += 3;
             player.Stats.FieldGoalsMade++;
             player.Stats.ThreePointersMade++;
-            
+
             string description = $"{player.Rating.name} makes a three point jumper.";
             if (simulator.CurrentState.LastPasser != null)
             {
@@ -156,7 +155,7 @@ public class Action_DriveAndFinish : ActionNode
         {
             return simulator.ResolveShootingFoul(player, interiorDefender, 2);
         }
-        
+
         player.Stats.FieldGoalsAttempted++;
         float baseChance = 55f;
         float offensePower = (adjustedRating.layup + adjustedRating.drivingDunk) / 2f;
@@ -179,7 +178,7 @@ public class Action_DriveAndFinish : ActionNode
         {
             player.Stats.Points += 2;
             player.Stats.FieldGoalsMade++;
-            
+
             string description = $"{player.Rating.name} drives and makes a layup.";
             if (simulator.CurrentState.LastPasser != null)
             {
@@ -273,18 +272,12 @@ public class Action_PassToBestTeammate : ActionNode
 
         simulator.ConsumeTime(Random.Range(1, 3));
         simulator.AddLog($"{player.Rating.name} passes the ball to {bestTeammate.Rating.name}.");
-        
-        // [핵심 수정]
-        // 1. "내가 패스했어" 라고 LastPasser에 기록
+
         simulator.CurrentState.LastPasser = player;
-        
-        // 2. 패스는 성공했고, 즉시 패스 받은 선수(bestShooter)를 대상으로 
-        //    행동 트리의 최상단(루트 노드)부터 평가를 다시 시작함
-        //    이것이 패스와 슛을 하나의 연속된 행동으로 묶어주는 역할을 함
+
         return simulator.GetRootNode().Evaluate(simulator, bestTeammate);
     }
 }
-
 
 // --- 액션 노드: 자유투 실행 ---
 public class Action_ShootFreeThrows : ActionNode
@@ -331,9 +324,9 @@ public class Action_ShootFreeThrows : ActionNode
             simulator.AddLog("Rebound after missed free throw.");
             simulator.ResolveRebound(_shooter);
         }
-        
+
         simulator.CurrentState.LastPasser = null;
-        
+
         return NodeState.SUCCESS;
     }
 }

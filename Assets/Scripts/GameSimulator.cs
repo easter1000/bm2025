@@ -7,6 +7,8 @@ using System;
 
 public class GameSimulator : MonoBehaviour
 {
+    public static event Action<GameResult> OnGameFinished;
+
     [Header("Simulation Settings")]
     public float simulationSpeed = 8.0f;
 
@@ -23,14 +25,11 @@ public class GameSimulator : MonoBehaviour
     public static event Action<GameState> OnGameStateUpdated;
     public static event Action<GamePlayer, GamePlayer> OnPlayerSubstituted;
 
-    // --- 데이터 구조 단순화: 전체 로스터와 각 선수의 IsOnCourt 플래그로만 관리 ---
     private List<GamePlayer> _homeTeamRoster;
     private List<GamePlayer> _awayTeamRoster;
     
     private List<GameLogEntry> _gameLog = new List<GameLogEntry>();
     private Node _rootOffenseNode;
-    private string _homeTeamName;
-    private string _awayTeamName;
     private enum SimStatus { Initializing, Running, Finished }
     private SimStatus _status = SimStatus.Initializing;
     private float _timeUntilNextPossession = 0f;
@@ -38,23 +37,26 @@ public class GameSimulator : MonoBehaviour
 
     void Start()
     {
-        InitializeGame();
-        if (_homeTeamRoster == null || _awayTeamRoster == null || GetPlayersOnCourt(0).Count < 5 || GetPlayersOnCourt(1).Count < 5)
+        Schedule gameToPlay = GameDataHolder.CurrentGameInfo;
+        if (gameToPlay == null)
         {
-            _status = SimStatus.Finished;
-            Debug.LogError("Game cannot start due to insufficient players.");
+            Debug.LogError("No game info found to start simulation.");
+            this.enabled = false;
             return;
         }
+
+        SetupGame(gameToPlay);
+
+        if (_status == SimStatus.Finished)
+        {
+            Debug.LogError("Game setup failed, cannot start due to insufficient players.");
+            return;
+        }
+
         BuildOffenseBehaviorTree();
         _status = SimStatus.Running;
         
-        if (UIManager.Instance != null)
-        {
-            UIManager.Instance.InitializePlayerPucks(_homeTeamRoster, _awayTeamRoster);
-            UIManager.Instance.SetTeamNames(_homeTeamName, _awayTeamName);
-        }
-
-        AddLog($"--- Game Start: {_homeTeamName} vs {_awayTeamName} ---");
+        AddLog($"--- Game Start: {CurrentState.HomeTeamName} vs {CurrentState.AwayTeamName} ---");
         AddLog($"--- Start of Quarter {CurrentState.Quarter} ---");
     }
 
@@ -97,6 +99,20 @@ public class GameSimulator : MonoBehaviour
                 AddLog("--- FINAL ---");
                 PrintFinalLogs();
                 PrintFinalBoxScore();
+
+                var finalPlayerStats = _homeTeamRoster.Concat(_awayTeamRoster)
+                    .Select(p => p.ExportToPlayerStat(p.Rating.player_id, CurrentState.Season, CurrentState.GameId))
+                    .ToList();
+                
+                var result = new GameResult
+                {
+                    HomeScore = CurrentState.HomeScore,
+                    AwayScore = CurrentState.AwayScore,
+                    PlayerStats = finalPlayerStats
+                };
+
+                OnGameFinished?.Invoke(result);
+                this.enabled = false;
             }
             else
             {
@@ -109,30 +125,27 @@ public class GameSimulator : MonoBehaviour
     }
     
     #region Initialization & Core Logic
-    private void InitializeGame()
+    private void SetupGame(Schedule gameInfo)
     {
         CurrentState = new GameState();
-        var allPlayersData = LocalDbManager.Instance.GetAllPlayerRatings();
-        var teamsData = allPlayersData.GroupBy(p => p.team).Where(g => g.Count() >= 5).ToList();
+        var homeTeamInfo = LocalDbManager.Instance.GetTeam(gameInfo.HomeTeamAbbr);
+        var awayTeamInfo = LocalDbManager.Instance.GetTeam(gameInfo.AwayTeamAbbr);
+        CurrentState.HomeTeamName = homeTeamInfo.team_name;
+        CurrentState.AwayTeamName = awayTeamInfo.team_name;
+        CurrentState.Season = gameInfo.Season;
+        CurrentState.GameId = gameInfo.GameId;
+        
+        _homeTeamRoster = LocalDbManager.Instance.GetPlayersByTeam(gameInfo.HomeTeamAbbr).Select(p => new GamePlayer(p, 0)).ToList();
+        _awayTeamRoster = LocalDbManager.Instance.GetPlayersByTeam(gameInfo.AwayTeamAbbr).Select(p => new GamePlayer(p, 1)).ToList();
 
-        if (teamsData.Count < 2) { Debug.LogError("Not enough teams with 5+ players to start a game."); return; }
-
-        int homeIndex = UnityEngine.Random.Range(0, teamsData.Count);
-        int awayIndex;
-        do { awayIndex = UnityEngine.Random.Range(0, teamsData.Count); } while (homeIndex == awayIndex);
-
-        _homeTeamName = teamsData[homeIndex].Key;
-        _awayTeamName = teamsData[awayIndex].Key;
-
-        _homeTeamRoster = teamsData[homeIndex].Select(p => new GamePlayer(p, 0)).ToList();
-        _awayTeamRoster = teamsData[awayIndex].Select(p => new GamePlayer(p, 1)).ToList();
+        if (_homeTeamRoster.Count < 5 || _awayTeamRoster.Count < 5)
+        {
+            _status = SimStatus.Finished;
+            return;
+        }
 
         SelectStarters(_homeTeamRoster);
         SelectStarters(_awayTeamRoster);
-
-        Debug.Log($"--- Matchup Set: {_homeTeamName} (Home) vs {_awayTeamName} (Away) ---");
-        AddLog($"Home Starters: {string.Join(", ", GetPlayersOnCourt(0).Select(p => p.Rating.name))}");
-        AddLog($"Away Starters: {string.Join(", ", GetPlayersOnCourt(1).Select(p => p.Rating.name))}");
     }
 
     private void SelectStarters(List<GamePlayer> roster)
@@ -141,7 +154,6 @@ public class GameSimulator : MonoBehaviour
         var sortedRoster = roster.OrderByDescending(p => p.Rating.overallAttribute).ToList();
         var filledPositions = new HashSet<int>();
 
-        // 1단계: 주 포지션 우선 배정
         foreach (var player in sortedRoster)
         {
             if (filledPositions.Count >= 5) break;
@@ -151,34 +163,10 @@ public class GameSimulator : MonoBehaviour
                 filledPositions.Add(player.Rating.position);
             }
         }
-
-        // 2단계: 빈 포지션이 있다면 유연성 활용
-        if (filledPositions.Count < 5)
-        {
-            var positionFlexibility = new Dictionary<int, List<int>> {
-                { 1, new List<int> { 1, 2 } }, { 2, new List<int> { 2, 1, 3 } },
-                { 3, new List<int> { 3, 2, 4 } }, { 4, new List<int> { 4, 5, 3 } },
-                { 5, new List<int> { 5, 4 } }
-            };
-            var emptyPositions = new List<int> { 1, 2, 3, 4, 5 }.Where(p => !filledPositions.Contains(p));
-
-            foreach (var pos in emptyPositions)
-            {
-                var candidate = sortedRoster
-                    .Where(p => !p.IsOnCourt)
-                    .FirstOrDefault(p => positionFlexibility.ContainsKey(p.Rating.position) && positionFlexibility[p.Rating.position].Contains(pos));
-                if (candidate != null)
-                {
-                    candidate.IsOnCourt = true;
-                }
-            }
-        }
         
-        // 3단계: 그래도 5명이 안되면 강제 배정
-        int currentStarters = roster.Count(p => p.IsOnCourt);
-        if (currentStarters < 5)
+        if (roster.Count(p => p.IsOnCourt) < 5)
         {
-            roster.Where(p => !p.IsOnCourt).Take(5 - currentStarters).ToList().ForEach(p => p.IsOnCourt = true);
+            roster.Where(p => !p.IsOnCourt).Take(5 - roster.Count(p => p.IsOnCourt)).ToList().ForEach(p => p.IsOnCourt = true);
         }
     }
     
@@ -189,9 +177,11 @@ public class GameSimulator : MonoBehaviour
             new Sequence(new List<Node> { new Condition_IsOpenFor3(), new Action_Try3PointShot() }),
             new Sequence(new List<Node> { new Condition_CanDrive(), new Action_DriveAndFinish() }),
             new Sequence(new List<Node> { new Condition_IsGoodForMidRange(), new Action_TryMidRangeShot() }),
-            new Action_PassToBestTeammate()
+            new Action_PassToBestTeammate() 
         });
     }
+    
+    // (이하 Stamina, Substitution, Helper, Printing 함수들은 이전과 동일)
 
     public void ConsumeTime(float seconds) => _timeUntilNextPossession = seconds;
     #endregion
@@ -231,26 +221,21 @@ public class GameSimulator : MonoBehaviour
 
         foreach (var playerOut in tiredPlayers)
         {
-            // 1. 이상적인 교체 시도 (체력 85 이상)
             var bestAvailableSub = FindBestSubstitute(teamRoster, playerOut, true);
-
-            // 2. 긴급 교체: 이상적인 교체 선수가 없고, 코트 위 선수의 체력이 15 미만일 때
             if (bestAvailableSub == null && playerOut.CurrentStamina < 15f)
             {
                 AddLog($"--- EMERGENCY SUB for {playerOut.Rating.name} (Stamina: {(int)playerOut.CurrentStamina}) ---");
-                // 체력 85 조건을 무시하고 벤치에서 최선의 선수를 찾음
                 bestAvailableSub = FindBestSubstitute(teamRoster, playerOut, false);
             }
 
             if (bestAvailableSub != null)
             {
                 PerformSubstitution(playerOut, bestAvailableSub);
-                break; // 한 번에 한 명만 교체하여 안정성 확보
+                break;
             }
         }
     }
 
-    // [신규 헬퍼 함수] 교체 선수 탐색 로직을 별도 함수로 분리하여 가독성 및 재사용성 향상
     private GamePlayer FindBestSubstitute(List<GamePlayer> roster, GamePlayer playerOut, bool requireHighStamina)
     {
         var positionFlexibility = new Dictionary<int, List<int>> {
@@ -270,11 +255,10 @@ public class GameSimulator : MonoBehaviour
         var bestSub = candidates
             .Where(p => positionFlexibility.ContainsKey(p.Rating.position) && positionFlexibility[p.Rating.position].Contains(outgoingPosition))
             .OrderByDescending(p => p.Rating.position == outgoingPosition)
-            .ThenByDescending(p => p.CurrentStamina) // 체력 좋은 선수 우선
+            .ThenByDescending(p => p.CurrentStamina)
             .ThenByDescending(p => p.Rating.overallAttribute)
             .FirstOrDefault();
 
-        // 포지션에 맞는 선수가 아예 없으면(긴급 상황 시), 그냥 벤치에서 가장 체력 좋은 선수라도 투입
         if (bestSub == null && !requireHighStamina) 
         {
             bestSub = roster
@@ -428,8 +412,8 @@ public class GameSimulator : MonoBehaviour
     private void PrintFinalBoxScore()
     {
         Debug.Log("--- FINAL BOX SCORE ---");
-        PrintTeamBoxScore(_homeTeamName, _homeTeamRoster);
-        PrintTeamBoxScore(_awayTeamName, _awayTeamRoster);
+        PrintTeamBoxScore(CurrentState.HomeTeamName, _homeTeamRoster);
+        PrintTeamBoxScore(CurrentState.AwayTeamName, _awayTeamRoster);
     }
 
     private void PrintTeamBoxScore(string teamName, List<GamePlayer> roster)
