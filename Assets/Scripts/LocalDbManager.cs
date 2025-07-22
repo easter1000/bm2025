@@ -185,13 +185,19 @@ public class LocalDbManager : MonoBehaviour
         // --- 3. 팀 재정 데이터 처리 ---
         var teamFinances = new List<TeamFinance>();
         long currentSeasonSalaryCap = 141000000;
+        // team_name → team_abbv 매핑 테이블 구축
+        var nameToAbbr = teamList.teams.ToDictionary(t => t.team_name, t => t.team_abbv);
+
         foreach (var teamSalaryPair in teamSalaries)
         {
+            // 키가 팀 전체 이름일 경우 약어로 변환, 이미 약어일 경우 그대로 사용
+            string abbr = nameToAbbr.ContainsKey(teamSalaryPair.Key) ? nameToAbbr[teamSalaryPair.Key] : teamSalaryPair.Key;
+
             teamFinances.Add(new TeamFinance 
             { 
-                TeamAbbr = teamSalaryPair.Key, 
+                TeamAbbr = abbr, 
                 Season = 2025, 
-                Standing = 0, // [추가] 초기 등수 설정
+                Standing = 0, // 초기 등수
                 Wins = 0, 
                 Losses = 0, 
                 SalaryCap = currentSeasonSalaryCap, 
@@ -370,7 +376,7 @@ public class LocalDbManager : MonoBehaviour
                 }
             }
 
-            var teamFinance = GetTeamFinance(team.team_abbv, 2025); // [주의] 현재 시즌을 가져오는 로직 필요
+            var teamFinance = GetTeamFinance(team.team_abbv, 2025);
             if (teamFinance != null)
             {
                 teamFinance.CurrentTeamSalary = totalAnnualSalary;
