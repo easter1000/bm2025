@@ -15,7 +15,7 @@ public class SpeedController : MonoBehaviour
     [SerializeField] private Button fastForwardButton;
     [SerializeField] private TextMeshProUGUI speedText;
 
-    private readonly List<float> speedMultipliers = new List<float> { 0.25f, 0.5f, 1f, 2f, 4f };
+    private readonly List<float> speedMultipliers = new List<float> { 0.25f, 0.5f, 1f, 2f, 4f, 8f };
     private int currentSpeedIndex = 2; // 기본 1x
     private bool isPaused = false;
     private const float BASE_SPEED = 12.0f;

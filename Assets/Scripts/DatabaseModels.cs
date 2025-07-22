@@ -48,6 +48,7 @@ public class PlayerRating
     public int offensiveRebound { get; set; }
     public int defensiveRebound { get; set; }
     public int potential { get; set; }
+    public float injury { get; set; } // [추가] 부상 위험도 (0.01 ~ 0.1)
 }
 
 // PlayerStatus 클래스는 선수의 변하는 상태와 계약 정보를 관리합니다.
@@ -86,6 +87,7 @@ public class PlayerStat
     public int ThreePointersAttempted { get; set; }
     public int FreeThrowsMade { get; set; }
     public int FreeThrowsAttempted { get; set; }
+    public int PersonalFouls { get; set; }
     public int PlusMinus { get; set; }
     public string RecordedAt { get; set; }
 }

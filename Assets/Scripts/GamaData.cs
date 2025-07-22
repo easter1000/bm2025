@@ -10,14 +10,28 @@ public class GamePlayer
     // [신규] 경기 중 실시간으로 변하는 체력 (100이 최대)
     public float CurrentStamina { get; set; } = 100f;
 
+    // [추가] 오늘 경기의 최대 스태미나 (경기 시작 시 DB값으로 설정됨)
+    public float MaxStaminaForGame { get; set; }
+
     // [핵심 추가] 선수가 현재 코트 위에 있는지 여부를 명시적으로 추적
     public bool IsOnCourt { get; set; } = false;
+
+    // [추가] 6반칙 퇴장 또는 부상으로 경기에서 제외되었는지 여부
+    public bool IsEjected { get; set; } = false;
+
+    // [추가] DB상의 부상 상태를 경기 시작 시 저장
+    public bool IsCurrentlyInjured { get; set; } = false;
+
+    // [추가] 부상과 스태미나 페널티가 모두 적용된 선수의 현재 실질 OVR
+    public int EffectiveOverall { get; set; }
 
     public GamePlayer(PlayerRating rating, int teamId)
     {
         Rating = rating;
         TeamId = teamId;
         Stats = new LivePlayerStats();
+        MaxStaminaForGame = 100f; // 기본값 설정
+        EffectiveOverall = rating.overallAttribute; // 초기값은 기본 OVR로 설정
     }
 
     public PlayerStat ExportToPlayerStat(int playerId, int season, string gameId)
@@ -42,6 +56,7 @@ public class GamePlayer
             ThreePointersAttempted = this.Stats.ThreePointersAttempted,
             FreeThrowsMade = this.Stats.FreeThrowsMade,
             FreeThrowsAttempted = this.Stats.FreeThrowsAttempted,
+            PersonalFouls = this.Stats.Fouls, // 파울 기록 추가
             PlusMinus = this.Stats.PlusMinus,
             RecordedAt = System.DateTime.UtcNow.ToString("s")
         };
@@ -59,7 +74,7 @@ public class LivePlayerStats
     public int Steals { get; set; }
     public int Blocks { get; set; }
     public int Turnovers { get; set; }
-    public int Fouls { get; set; }
+    public int PersonalFouls { get; set; }
     public int FieldGoalsMade { get; set; }
     public int FieldGoalsAttempted { get; set; }
     public int ThreePointersMade { get; set; }

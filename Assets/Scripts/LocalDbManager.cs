@@ -223,6 +223,30 @@ public class LocalDbManager : MonoBehaviour
 
     #region Public DB Accessors
     
+    // --- [UTILITY] ---
+    /// <summary>
+    /// [일회성 유틸리티] DB에 있는 모든 선수에게 부상 위험도(injury) 값을 랜덤하게 할당합니다.
+    /// PlayerRating 테이블에 injury 컬럼이 추가된 후 한 번만 실행하면 됩니다.
+    /// </summary>
+    public void AssignRandomInjuryRiskToAllPlayers()
+    {
+        Debug.Log("[DB UTILITY] Assigning random injury risk to all players...");
+        var allPlayers = Connection.Table<PlayerRating>().ToList();
+        if (allPlayers.Any(p => p.injury > 0))
+        {
+            Debug.LogWarning("[DB UTILITY] Injury risk already seems to be assigned. Aborting.");
+            return;
+        }
+
+        foreach (var player in allPlayers)
+        {
+            // 0.01 (금강불괴) ~ 0.1 (유리몸) 사이의 값을 랜덤하게 할당
+            player.injury = UnityEngine.Random.Range(0.01f, 0.101f);
+        }
+        Connection.UpdateAll(allPlayers);
+        Debug.Log($"[DB UTILITY] Finished assigning injury risk for {allPlayers.Count} players.");
+    }
+
     // --- User ---
     public User GetUser() => Connection.Table<User>().FirstOrDefault();
 
@@ -343,6 +367,54 @@ public class LocalDbManager : MonoBehaviour
     }
 
     public void InsertPlayerStats(List<PlayerStat> stats) => Connection.InsertAll(stats);
+
+    public void UpdatePlayerAfterGame(int playerId, int staminaUsed, bool isInjured, int injuryDays)
+    {
+        var status = GetPlayerStatus(playerId);
+        if (status == null) return;
+
+        status.Stamina -= staminaUsed;
+        if (status.Stamina < 0) status.Stamina = 0;
+
+        if (isInjured)
+        {
+            status.IsInjured = true;
+            // 이미 부상중인 선수에게 더 긴 부상 기간이 적용되면 갱신
+            if (injuryDays > status.InjuryDaysLeft)
+            {
+                status.InjuryDaysLeft = injuryDays;
+            }
+        }
+        Connection.Update(status);
+    }
+    
+    /// <summary>
+    /// [매일 호출] 모든 선수의 상태를 하루치 업데이트합니다. (스태미나 회복, 부상 기간 감소)
+    /// </summary>
+    public void UpdateAllPlayerStatusForNewDay()
+    {
+        var allStatuses = Connection.Table<PlayerStatus>().ToList();
+        foreach (var status in allStatuses)
+        {
+            // 1. 스태미나 회복 (최대 100)
+            status.Stamina += 15;
+            if (status.Stamina > 100) status.Stamina = 100;
+
+            // 2. 부상 회복
+            if (status.IsInjured)
+            {
+                status.InjuryDaysLeft--;
+                if (status.InjuryDaysLeft <= 0)
+                {
+                    status.IsInjured = false;
+                    status.InjuryDaysLeft = 0;
+                }
+            }
+        }
+        Connection.UpdateAll(allStatuses);
+        Debug.Log($"[DB] Advanced day for {allStatuses.Count} player statuses (Stamina/Injury recovery).");
+    }
+
 
     /// <summary>
     /// 특정 선수를 DB에서 방출하여 FA(자유 계약) 상태로 만듭니다.

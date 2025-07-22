@@ -35,6 +35,10 @@ public class UIManager : MonoBehaviour
     [Header("Game Log UI")]
     public GameLogUI gameLogUI; // 새로 추가
 
+    [Header("Auto-Sub Toggle")]
+    [SerializeField] private Toggle autoSubToggle;
+    [SerializeField] private GameSimulator gameSimulator;
+
     [Header("Court & Puck References")]
     public PlayerPuck playerPuckPrefab;
     public Transform[] homeCourtPositions;
@@ -55,6 +59,11 @@ public class UIManager : MonoBehaviour
         }
         
         InitializeTeamColors();
+
+        if (autoSubToggle != null)
+        {
+            autoSubToggle.onValueChanged.AddListener(OnAutoSubToggleChanged);
+        }
     }
 
     void OnEnable()
@@ -71,6 +80,19 @@ public class UIManager : MonoBehaviour
         GameSimulator.OnUILogGenerated -= HandleUILog; // 새로 추가
     }
     
+    private void OnAutoSubToggleChanged(bool isOn)
+    {
+        if (gameSimulator == null)
+        {
+            gameSimulator = FindObjectOfType<GameSimulator>();
+        }
+
+        if (gameSimulator != null)
+        {
+            gameSimulator.IsUserTeamAutoSubbed = isOn;
+        }
+    }
+
     public void InitializePlayerPucks(List<GamePlayer> homeRoster, List<GamePlayer> awayRoster)
     {
         foreach (var puck in _playerPucks.Values)
