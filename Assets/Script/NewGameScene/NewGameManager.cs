@@ -430,7 +430,7 @@ public class NewGameManager : MonoBehaviour
             playerLines.AddRange(starters);
             playerLines.AddRange(bench);
 
-            TeamData teamData = new TeamData(teamEntity.team_id, teamName, abbr, playerLines);
+            TeamData teamData = new TeamData(teamEntity.team_id, teamName, abbr, playerLines, teamEntity.team_color);
             teams.Add(teamData);
         }
     }
