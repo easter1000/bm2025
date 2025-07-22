@@ -114,9 +114,8 @@ public class ScheduleView : MonoBehaviour
             return;
         }
 
-        // GameScene에서 사용할 GameId를 저장
-        PlayerPrefs.SetString("SelectedGameId", _userGameOnSelectedDate.GameId);
-        PlayerPrefs.Save();
+        // GameDataHolder에 선택된 경기 정보를 저장
+        GameDataHolder.CurrentGameInfo = _userGameOnSelectedDate;
 
         Debug.Log($"경기 시작: {_userGameOnSelectedDate.GameId}. gamelogic_test 씬으로 이동합니다.");
         

@@ -40,7 +40,7 @@ public class GameSimulator : MonoBehaviour
         Schedule gameToPlay = GameDataHolder.CurrentGameInfo;
         if (gameToPlay == null)
         {
-            Debug.LogError("No game info found to start simulation.");
+            Debug.LogError("시작할 경기 정보를 찾을 수 없습니다. (GameDataHolder.CurrentGameInfo is null)");
             this.enabled = false;
             return;
         }
