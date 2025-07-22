@@ -7,11 +7,13 @@ using UnityEngine;
 using UnityEngine.EventSystems;
 using UnityEngine.UI;
 using madcamp3.Assets.Script.Player;
+using UnityEngine.SceneManagement;
 
 public class TradeSceneManager : MonoBehaviour
 {
     [Header("UI References")]
     [SerializeField] private GameObject playerTradeLinePrefab;
+    [SerializeField] private Button backButton;
 
     [Header("Detail View")]
     [SerializeField] private PlayerDetailUI playerDetailUI;
@@ -67,7 +69,14 @@ public class TradeSceneManager : MonoBehaviour
         if (myTeamConfirmButton != null) AddClickTrigger(myTeamConfirmButton.gameObject, OnMyTeamConfirmClicked);
         if (oppTeamConfirmButton != null) AddClickTrigger(oppTeamConfirmButton.gameObject, OnOppTeamConfirmClicked);
         if (tradeButton != null) tradeButton.onClick.AddListener(OnTradeButtonClicked);
+        if (backButton != null) backButton.onClick.AddListener(OnBackButtonClicked);
         Initialize();
+        //_hasStarted = true;
+    }
+
+    private void OnBackButtonClicked()
+    {
+        SceneManager.LoadScene("SeasonScene");
     }
 
     private void Initialize()

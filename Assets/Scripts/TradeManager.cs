@@ -62,6 +62,18 @@ public class TradeManager : MonoBehaviour
         float valueDifference = finalOfferedValue - adjustedRequestedValue;
         Debug.Log($"[TradeEval] RequiredRatio: {requiredRatio:F2}, AdjustedRequestedValue: ${adjustedRequestedValue:N0}, ValueDifference: ${valueDifference:N0}");
 
+        // 손해보는 거래: 차액을 현금으로 요구
+        long requiredCash = (long)Mathf.Abs(valueDifference);
+        Debug.Log($"[Trade Proposal] {targetTeamAbbr} requests an additional ${requiredCash:N0} to complete the trade.");
+
+        long newTeamSalary = CalculateTotalSalary(targetTeamRoster) - requestedSalary + offeredSalary;
+        Debug.Log($"[TradeEval] {targetTeamAbbr} newTeamSalary after trade: ${newTeamSalary:N0} (Cap: ${targetTeamFinance.TeamBudget:N0})");
+        if (newTeamSalary > targetTeamFinance.TeamBudget + requiredCash)
+        {
+            Debug.Log($"[Trade Rejected] Financials: {targetTeamAbbr} would exceed salary cap.");
+            return -1; // 재정적 타당성 실패
+        }
+
         if (valueDifference >= 0)
         {
             Debug.Log($"[Trade Accepted] Fair Trade. {targetTeamAbbr} accepted the trade.");
@@ -74,18 +86,6 @@ public class TradeManager : MonoBehaviour
         {
             Debug.Log($"[Trade Rejected] Unfair deal. Offered value is less than {rejectionThreshold * 100}% of requested value.");
             return -1;
-        }
-
-        // 손해보는 거래: 차액을 현금으로 요구
-        long requiredCash = (long)Mathf.Abs(valueDifference);
-        Debug.Log($"[Trade Proposal] {targetTeamAbbr} requests an additional ${requiredCash:N0} to complete the trade.");
-
-        long newTeamSalary = CalculateTotalSalary(targetTeamRoster) - requestedSalary + offeredSalary;
-        Debug.Log($"[TradeEval] {targetTeamAbbr} newTeamSalary after trade: ${newTeamSalary:N0} (Cap: ${targetTeamFinance.TeamBudget:N0})");
-        if (newTeamSalary > targetTeamFinance.TeamBudget + requiredCash)
-        {
-            Debug.Log($"[Trade Rejected] Financials: {targetTeamAbbr} would exceed salary cap.");
-            return -1; // 재정적 타당성 실패
         }
 
         return (int)requiredCash; // int로 캐스팅하여 반환
