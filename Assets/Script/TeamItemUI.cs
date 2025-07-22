@@ -45,6 +45,9 @@ public class TeamItemUI : MonoBehaviour
     private static readonly Color RowColorEven = new Color32(0xF2, 0xF2, 0xF2, 0xFF); // 짝수 행
     private static readonly Color RowColorOdd  = new Color32(0xE5, 0xE5, 0xE5, 0xFF); // 홀수 행
 
+    // 선택된 PlayerLine에 표시되는 하이라이트(검은색 테두리)
+    private GameObject highlightedPlayerObj;
+
     public void Init(TeamData data, Action<TeamData> onClick)
     {
         teamData = data;
@@ -112,6 +115,9 @@ public class TeamItemUI : MonoBehaviour
             if (plc == null) return;
             plc.OnClicked -= ShowPlayerDetail;
             plc.OnClicked += ShowPlayerDetail;
+
+            // 하이라이트 람다 추가 (중복 가능성 낮음)
+            plc.OnClicked += (pl) => UpdatePlayerHighlight(plc.gameObject);
         }
 
         for (int idx = 0; idx < starterCtrls.Length; idx++)
@@ -226,6 +232,7 @@ public class TeamItemUI : MonoBehaviour
         if (playerDetailUI != null && starterCtrls.Length > 0 && starterCtrls[0] != null && starterCtrls[0].Data != null)
         {
             ShowPlayerDetail(starterCtrls[0].Data);
+            UpdatePlayerHighlight(starterCtrls[0].gameObject);
         }
 
         void ShowPlayerDetail(PlayerLine pl)
@@ -236,6 +243,74 @@ public class TeamItemUI : MonoBehaviour
             {
                 playerDetailUI.SetPlayer(rating);
             }
+        }
+
+        // ----- 내부 메서드 : 플레이어 라인 하이라이트 -----
+        void UpdatePlayerHighlight(GameObject newObj)
+        {
+            if (highlightedPlayerObj == newObj) return;
+
+            // 1) 기존 BorderLines 비활성화
+            if (highlightedPlayerObj != null)
+            {
+                Transform prevBorder = highlightedPlayerObj.transform.Find("BorderLines");
+                if (prevBorder != null) prevBorder.gameObject.SetActive(false);
+            }
+
+            // 2) 새 BorderLines 생성/활성화
+            if (newObj != null)
+            {
+                Transform borderT = newObj.transform.Find("BorderLines");
+                if (borderT == null)
+                {
+                    GameObject borderRoot = new GameObject("BorderLines", typeof(RectTransform));
+                    borderRoot.transform.SetParent(newObj.transform, false);
+                    borderRoot.transform.SetAsLastSibling();
+
+                    RectTransform rootRT = borderRoot.GetComponent<RectTransform>();
+                    rootRT.anchorMin = Vector2.zero;
+                    rootRT.anchorMax = Vector2.one;
+                    const float thickness = 3f;
+                    float inset = thickness * 0.5f; // 테두리 절반만큼 안쪽으로 들여 그린다
+                    rootRT.offsetMin = new Vector2(inset, inset);
+                    rootRT.offsetMax = new Vector2(-inset, -inset);
+
+                    Color borderColor = Color.black;
+
+                    void CreateLine(string name, Vector2 anchorMin, Vector2 anchorMax)
+                    {
+                        GameObject line = new GameObject(name, typeof(RectTransform), typeof(Image));
+                        line.transform.SetParent(borderRoot.transform, false);
+                        RectTransform rt = line.GetComponent<RectTransform>();
+                        rt.anchorMin = anchorMin;
+                        rt.anchorMax = anchorMax;
+                        rt.offsetMin = Vector2.zero;
+                        rt.offsetMax = Vector2.zero;
+                        Image img = line.GetComponent<Image>();
+                        img.color = borderColor;
+                        img.raycastTarget = false;
+                    }
+
+                    // Top
+                    CreateLine("Top", new Vector2(0,1), new Vector2(1,1));
+                    borderRoot.transform.Find("Top").GetComponent<RectTransform>().sizeDelta = new Vector2(0, thickness);
+                    // Bottom
+                    CreateLine("Bottom", new Vector2(0,0), new Vector2(1,0));
+                    borderRoot.transform.Find("Bottom").GetComponent<RectTransform>().sizeDelta = new Vector2(0, thickness);
+                    // Left
+                    CreateLine("Left", new Vector2(0,0), new Vector2(0,1));
+                    borderRoot.transform.Find("Left").GetComponent<RectTransform>().sizeDelta = new Vector2(thickness, 0);
+                    // Right
+                    CreateLine("Right", new Vector2(1,0), new Vector2(1,1));
+                    borderRoot.transform.Find("Right").GetComponent<RectTransform>().sizeDelta = new Vector2(thickness, 0);
+                }
+                else
+                {
+                    borderT.gameObject.SetActive(true);
+                }
+            }
+
+            highlightedPlayerObj = newObj;
         }
     }
 

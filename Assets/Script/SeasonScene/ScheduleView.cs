@@ -95,6 +95,13 @@ public class ScheduleView : MonoBehaviour
             cell.Configure(game, _currentSeason);
         }
         
+        // 레이아웃 최신화 (즉시)
+        if (contentParent != null)
+        {
+            // 즉시 레이아웃 Rebuild → ContentSizeFitter가 크기 재계산하도록
+            UnityEngine.UI.LayoutRebuilder.ForceRebuildLayoutImmediate(contentParent as RectTransform);
+        }
+
         // 내 팀의 예정된 경기가 있는지 확인
         _userGameOnSelectedDate = games.FirstOrDefault(g => 
             (g.HomeTeamAbbr == _userTeamAbbr || g.AwayTeamAbbr == _userTeamAbbr) && g.GameStatus == "Scheduled");
