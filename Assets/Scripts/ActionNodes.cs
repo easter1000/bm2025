@@ -121,8 +121,8 @@ public class Action_Try3PointShot : Node
         var shooterRating = sim.GetAdjustedRating(player);
         var defenderRating = sim.GetAdjustedRating(defender);
 
-        // 성공률: 슈터의 3점슛 능력치 vs 수비수의 외곽 수비 능력치
-        float successChance = 40f + (shooterRating.threePointShot - defenderRating.perimeterDefense) * 0.8f;
+        // 성공률: 수비수 스탯에 1.2배 가중치를 부여하여 공수 밸런스 조정
+        float successChance = 40f + (shooterRating.threePointShot - (defenderRating.perimeterDefense * 1.2f)) * 0.8f;
         successChance = UnityEngine.Mathf.Clamp(successChance, 5f, 95f);
 
         sim.AddLog($"{player.Rating.name} shoots a 3-pointer over {defender.Rating.name}. Chance: {successChance:F1}%");
@@ -138,13 +138,20 @@ public class Action_Try3PointShot : Node
             sim.RecordAssist(sim.CurrentState.LastPasser);
             sim.UpdatePlusMinusOnScore(player.TeamId, 3);
             sim.AddLog("It's good!");
+            
+            // 공격권 전환 및 리셋
+            sim.CurrentState.PossessingTeamId = 1 - player.TeamId;
+            sim.CurrentState.ShotClockSeconds = 24f;
+            sim.CurrentState.CurrentBallHandler = null;
+            sim.CurrentState.LastPasser = null;
         }
         else
         {
             sim.AddLog("It's off the mark.");
             sim.ResolveRebound(player);
+            sim.CurrentState.CurrentBallHandler = null; // 리바운드 상황이므로 볼 핸들러 초기화
         }
-        sim.ConsumeTime(UnityEngine.Random.Range(3, 6));
+        sim.ConsumeTime(UnityEngine.Random.Range(4f, 8f)); // 공격 시간 소모 3-6초 -> 4-8초로 증가
         return NodeState.SUCCESS;
     }
 }
@@ -166,9 +173,9 @@ public class Action_DriveAndFinish : Node
             return sim.ResolveShootingFoul(player, defender, 2);
         }
 
-        // 성공률: 슈터의 돌파/레이업 능력치 vs 수비수의 내부 수비 능력치
+        // 성공률: 내부 수비수 스탯에 1.25배 가중치를 부여하여 공수 밸런스 조정
         float offensePower = (shooterRating.layup + shooterRating.drivingDunk) / 2f;
-        float successChance = 55f + (offensePower - defenderRating.interiorDefense) * 0.9f;
+        float successChance = 55f + (offensePower - (defenderRating.interiorDefense * 1.25f)) * 0.9f;
         successChance = UnityEngine.Mathf.Clamp(successChance, 10f, 95f);
         
         sim.AddLog($"{player.Rating.name} drives past {defender.Rating.name} for a layup. Chance: {successChance:F1}%");
@@ -183,13 +190,20 @@ public class Action_DriveAndFinish : Node
             sim.RecordAssist(sim.CurrentState.LastPasser);
             sim.UpdatePlusMinusOnScore(player.TeamId, 2);
             sim.AddLog("Scores!");
+
+            // 공격권 전환 및 리셋
+            sim.CurrentState.PossessingTeamId = 1 - player.TeamId;
+            sim.CurrentState.ShotClockSeconds = 24f;
+            sim.CurrentState.CurrentBallHandler = null;
+            sim.CurrentState.LastPasser = null;
         }
         else
         {
             sim.AddLog("Missed the layup under pressure.");
             sim.ResolveRebound(player);
+            sim.CurrentState.CurrentBallHandler = null;
         }
-        sim.ConsumeTime(UnityEngine.Random.Range(4, 7));
+        sim.ConsumeTime(UnityEngine.Random.Range(5f, 9f)); // 공격 시간 소모 4-7초 -> 5-9초로 증가
         return NodeState.SUCCESS;
     }
 }
@@ -204,8 +218,8 @@ public class Action_TryMidRangeShot : Node
         var shooterRating = sim.GetAdjustedRating(player);
         var defenderRating = sim.GetAdjustedRating(defender);
 
-        // 성공률: 슈터의 중거리슛 능력치 vs 수비수의 외곽 수비 능력치
-        float successChance = 50f + (shooterRating.midRangeShot - defenderRating.perimeterDefense) * 0.85f;
+        // 성공률: 수비수 스탯에 1.2배 가중치를 부여하여 공수 밸런스 조정
+        float successChance = 50f + (shooterRating.midRangeShot - (defenderRating.perimeterDefense * 1.2f)) * 0.85f;
         successChance = UnityEngine.Mathf.Clamp(successChance, 15f, 90f);
 
         sim.AddLog($"{player.Rating.name} takes a mid-range jumper against {defender.Rating.name}. Chance: {successChance:F1}%");
@@ -220,13 +234,20 @@ public class Action_TryMidRangeShot : Node
             sim.RecordAssist(sim.CurrentState.LastPasser);
             sim.UpdatePlusMinusOnScore(player.TeamId, 2);
             sim.AddLog("Swish.");
+            
+            // 공격권 전환 및 리셋
+            sim.CurrentState.PossessingTeamId = 1 - player.TeamId;
+            sim.CurrentState.ShotClockSeconds = 24f;
+            sim.CurrentState.CurrentBallHandler = null;
+            sim.CurrentState.LastPasser = null;
         }
         else
         {
             sim.AddLog("Clanks off the rim.");
             sim.ResolveRebound(player);
+            sim.CurrentState.CurrentBallHandler = null;
         }
-        sim.ConsumeTime(UnityEngine.Random.Range(3, 6));
+        sim.ConsumeTime(UnityEngine.Random.Range(4f, 8f)); // 공격 시간 소모 3-6초 -> 4-8초로 증가
         return NodeState.SUCCESS;
     }
 }
@@ -264,13 +285,13 @@ public class Action_ShootFreeThrows : Node
         }
         
         sim.AddLog($"{_shooter.Rating.name} makes {made} of {_attempts} free throws.");
-        sim.ConsumeTime(Random.Range(5, 10));
-
-        if (sim.CurrentState.PossessingTeamId == _shooter.TeamId)
-        {
-           sim.CurrentState.PossessingTeamId = 1 - _shooter.TeamId;
-        }
-
+        
+        // 자유투 후에는 항상 공격권이 전환되므로 볼 핸들러 초기화 및 리셋
+        sim.CurrentState.CurrentBallHandler = null;
+        sim.CurrentState.LastPasser = null;
+        sim.CurrentState.PossessingTeamId = 1 - _shooter.TeamId;
+        sim.CurrentState.ShotClockSeconds = 24f;
+        
         return NodeState.SUCCESS;
     }
 }
@@ -285,13 +306,18 @@ public class Action_PassToBestTeammate : Node
             player.Stats.Turnovers++;
             sim.AddLog($"{player.Rating.name} has no one to pass to, turnover!");
             sim.CurrentState.PossessingTeamId = 1 - player.TeamId;
+            sim.CurrentState.ShotClockSeconds = 24f;
+            sim.CurrentState.CurrentBallHandler = null; // 턴오버 시 볼 핸들러 초기화
             return NodeState.FAILURE;
         }
 
         var bestTeammate = teammates.OrderByDescending(p => p.Rating.overallAttribute).First();
-        sim.CurrentState.LastPasser = player;
+        sim.CurrentState.LastPasser = player; // 어시스트 추적
+        sim.CurrentState.CurrentBallHandler = bestTeammate; // 공 받은 선수로 교체
         sim.AddLog($"{player.Rating.name} passes to {bestTeammate.Rating.name}.");
-        sim.ConsumeTime(Random.Range(2, 4));
+        
+        // 공격 템포 조절: 패스 시 3~6초의 시간을 소모하도록 수정
+        sim.ConsumeTime(UnityEngine.Random.Range(3f, 6f));
         
         return NodeState.SUCCESS;
     }
@@ -310,8 +336,8 @@ public class Action_TryForced3PointShot : Node
         var shooterRating = sim.GetAdjustedRating(player);
         var defenderRating = sim.GetAdjustedRating(defender);
 
-        // 성공률: 기존 로직에서 10% 페널티 적용
-        float successChance = 30f + (shooterRating.threePointShot - defenderRating.perimeterDefense) * 0.8f;
+        // 성공률: 기존 로직에서 10% 페널티 + 수비 가중치(1.2배) 적용
+        float successChance = 30f + (shooterRating.threePointShot - (defenderRating.perimeterDefense * 1.2f)) * 0.8f;
         successChance = UnityEngine.Mathf.Clamp(successChance, 5f, 85f);
 
         sim.AddLog($"FORCED 3-pointer by {player.Rating.name} over {defender.Rating.name}. Chance: {successChance:F1}%");
@@ -326,13 +352,20 @@ public class Action_TryForced3PointShot : Node
             sim.RecordAssist(sim.CurrentState.LastPasser);
             sim.UpdatePlusMinusOnScore(player.TeamId, 3);
             sim.AddLog("It's good!");
+            
+            // 공격권 전환 및 리셋
+            sim.CurrentState.PossessingTeamId = 1 - player.TeamId;
+            sim.CurrentState.ShotClockSeconds = 24f;
+            sim.CurrentState.CurrentBallHandler = null;
+            sim.CurrentState.LastPasser = null;
         }
         else
         {
             sim.AddLog("It's off the mark.");
             sim.ResolveRebound(player);
+            sim.CurrentState.CurrentBallHandler = null; // 리바운드 상황이므로 볼 핸들러 초기화
         }
-        sim.ConsumeTime(UnityEngine.Random.Range(3, 6));
+        sim.ConsumeTime(UnityEngine.Random.Range(4f, 8f)); // 공격 시간 소모 3-6초 -> 4-8초로 증가
         return NodeState.SUCCESS;
     }
 }
@@ -354,11 +387,11 @@ public class Action_TryForcedDrive : Node
             return sim.ResolveShootingFoul(player, defender, 2);
         }
 
-        // 성공률: 슈터의 돌파/레이업 능력치 vs 수비수의 내부 수비 능력치
+        // 성공률: 기존 로직에서 10% 페널티 + 수비 가중치(1.25배) 적용
         float offensePower = (shooterRating.layup + shooterRating.drivingDunk) / 2f;
 
-        // 성공률: 기존 로직에서 10% 페널티 적용
-        float successChance = 45f + (offensePower - defenderRating.interiorDefense) * 0.9f;
+        // 성공률: 기존 로직에서 10% 페널티 + 수비 가중치(1.25배) 적용
+        float successChance = 45f + (offensePower - (defenderRating.interiorDefense * 1.25f)) * 0.9f;
         successChance = UnityEngine.Mathf.Clamp(successChance, 10f, 85f);
         
         sim.AddLog($"FORCED drive by {player.Rating.name} past {defender.Rating.name}. Chance: {successChance:F1}%");
@@ -372,13 +405,20 @@ public class Action_TryForcedDrive : Node
             sim.RecordAssist(sim.CurrentState.LastPasser);
             sim.UpdatePlusMinusOnScore(player.TeamId, 2);
             sim.AddLog("Scores!");
+
+            // 공격권 전환 및 리셋
+            sim.CurrentState.PossessingTeamId = 1 - player.TeamId;
+            sim.CurrentState.ShotClockSeconds = 24f;
+            sim.CurrentState.CurrentBallHandler = null;
+            sim.CurrentState.LastPasser = null;
         }
         else
         {
             sim.AddLog("Missed the layup under pressure.");
             sim.ResolveRebound(player);
+            sim.CurrentState.CurrentBallHandler = null;
         }
-        sim.ConsumeTime(UnityEngine.Random.Range(4, 7));
+        sim.ConsumeTime(UnityEngine.Random.Range(5f, 9f)); // 공격 시간 소모 4-7초 -> 5-9초로 증가
         return NodeState.SUCCESS;
     }
 }
@@ -392,8 +432,8 @@ public class Action_TryForcedMidRangeShot : Node
         var shooterRating = sim.GetAdjustedRating(player);
         var defenderRating = sim.GetAdjustedRating(defender);
 
-        // 성공률: 기존 로직에서 10% 페널티 적용
-        float successChance = 40f + (shooterRating.midRangeShot - defenderRating.perimeterDefense) * 0.85f;
+        // 성공률: 기존 로직에서 10% 페널티 + 수비 가중치(1.2배) 적용
+        float successChance = 40f + (shooterRating.midRangeShot - (defenderRating.perimeterDefense * 1.2f)) * 0.85f;
         successChance = UnityEngine.Mathf.Clamp(successChance, 15f, 80f);
 
         sim.AddLog($"FORCED mid-range by {player.Rating.name} against {defender.Rating.name}. Chance: {successChance:F1}%");
@@ -407,13 +447,20 @@ public class Action_TryForcedMidRangeShot : Node
             sim.RecordAssist(sim.CurrentState.LastPasser);
             sim.UpdatePlusMinusOnScore(player.TeamId, 2);
             sim.AddLog("Swish.");
+            
+            // 공격권 전환 및 리셋
+            sim.CurrentState.PossessingTeamId = 1 - player.TeamId;
+            sim.CurrentState.ShotClockSeconds = 24f;
+            sim.CurrentState.CurrentBallHandler = null;
+            sim.CurrentState.LastPasser = null;
         }
         else
         {
             sim.AddLog("Clanks off the rim.");
             sim.ResolveRebound(player);
+            sim.CurrentState.CurrentBallHandler = null;
         }
-        sim.ConsumeTime(UnityEngine.Random.Range(3, 6));
+        sim.ConsumeTime(UnityEngine.Random.Range(4f, 8f)); // 공격 시간 소모 3-6초 -> 4-8초로 증가
         return NodeState.SUCCESS;
     }
 }

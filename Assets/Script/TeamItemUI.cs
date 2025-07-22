@@ -70,7 +70,8 @@ public class TeamItemUI : MonoBehaviour
 
         if (teamColor != null)
         {
-            teamColor.color = data.teamColor;
+            ColorUtility.TryParseHtmlString(data.teamColor, out Color color);
+            teamColor.color = color;
         }
 
         // -------------- Starting Players --------------
@@ -88,8 +89,8 @@ public class TeamItemUI : MonoBehaviour
 
         // starterIds가 비어있으면 기존 로직과 동일하게 상위 5명(정렬된 playerLines) 사용
         var starters = starterIds.Count > 0
-            ? data.playerLines.Where(pl => starterIds.Contains(pl.PlayerId)).Take(5).ToList()
-            : data.playerLines.Take(5).ToList();
+            ? data.players.Where(pl => starterIds.Contains(pl.PlayerId)).Take(5).ToList()
+            : data.players.Take(5).ToList();
 
         // ---- Team Average 계산 ----
         if (startingAvgText != null && startingAvgBackground != null)
@@ -99,7 +100,7 @@ public class TeamItemUI : MonoBehaviour
             startingAvgBackground.color = GetColorByScore(avgStart);
         }
 
-        var benchPlayersList = data.playerLines.Skip(5).ToList();
+        var benchPlayersList = data.players.Skip(5).ToList();
         if (substituteAvgText != null && substituteAvgBackground != null)
         {
             float avgSub = benchPlayersList.Count > 0 ? (float)benchPlayersList.Average(p => p.OverallScore) : 0f;
@@ -194,7 +195,7 @@ public class TeamItemUI : MonoBehaviour
                 Destroy(child.gameObject);
             }
 
-            var benchPlayers = data.playerLines.Skip(5).ToList();
+            var benchPlayers = data.players.Skip(5).ToList();
             for (int i = 0; i < benchPlayers.Count; i++)
             {
                 var plInstance = Instantiate(benchPlayerPrefab.gameObject, benchContent);

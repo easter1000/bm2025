@@ -34,11 +34,20 @@ public class CalendarGrid : MonoBehaviour
     [Header("Schedule View")]
     [SerializeField] private ScheduleView scheduleView;
 
+    [Header("Actions")]
+    [SerializeField] private Button advanceDayButton; // '일정 진행' 버튼
+
     private void Awake()
     {
         // 내비게이션 오브젝트에 클릭 리스너 연결 (Button 또는 Image)
         AddClickListener(prevMonthObj, -1);
         AddClickListener(nextMonthObj, +1);
+
+        if (advanceDayButton != null)
+        {
+            advanceDayButton.onClick.AddListener(OnAdvanceDayClicked);
+            advanceDayButton.gameObject.SetActive(false); // 초기에는 숨김
+        }
 
         InitializeDateFromUser();
     }
@@ -208,6 +217,13 @@ public class CalendarGrid : MonoBehaviour
         cell.SetSelected(true);
         _selectedCell = cell;
 
+        // '오늘' 날짜인지 확인하여 버튼 표시 여부 결정
+        DateTime today = SeasonManager.Instance.GetCurrentDate();
+        if (advanceDayButton != null)
+        {
+            advanceDayButton.gameObject.SetActive(date.Date == today.Date);
+        }
+
         // ScheduleView 업데이트
         if (scheduleView != null)
         {
@@ -221,6 +237,42 @@ public class CalendarGrid : MonoBehaviour
         {
             string monthName = CultureInfo.GetCultureInfo("en-US").DateTimeFormat.GetMonthName(_currentMonth).ToUpper();
             monthLabel.text = $"{monthName} {_currentYear}";
+        }
+    }
+
+    private void OnAdvanceDayClicked()
+    {
+        DateTime today = SeasonManager.Instance.GetCurrentDate();
+        string userTeamAbbr = LocalDbManager.Instance.GetUser()?.SelectedTeamAbbr;
+
+        if (string.IsNullOrEmpty(userTeamAbbr)) return;
+
+        // 오늘 날짜의 경기 목록을 가져옴
+        List<Schedule> gamesToday = LocalDbManager.Instance.GetGamesForDate(today.ToString("yyyy-MM-dd"));
+        
+        // 오늘 내 팀의 경기가 있는지 확인
+        Schedule myGameToday = gamesToday?.FirstOrDefault(g => 
+            (g.HomeTeamAbbr == userTeamAbbr || g.AwayTeamAbbr == userTeamAbbr) && g.GameStatus == "Scheduled");
+
+        if (myGameToday != null)
+        {
+            // 경기가 있으면: GameDataHolder에 정보 저장하고 씬 이동
+            GameDataHolder.CurrentGameInfo = myGameToday;
+            Debug.Log($"오늘의 경기({myGameToday.GameId})를 시작합니다. gamelogic_test 씬으로 이동합니다.");
+            UnityEngine.SceneManagement.SceneManager.LoadScene("gamelogic_test");
+        }
+        else
+        {
+            // 경기가 없으면: 날짜를 하루 진행하고 달력을 새로고침
+            Debug.Log("오늘은 경기가 없습니다. 날짜를 하루 진행합니다.");
+            LocalDbManager.Instance.AdvanceUserDate();
+            PopulateCalendar(); // 달력 UI 새로고침
+
+            // 버튼 다시 숨기기
+            if (advanceDayButton != null)
+            {
+                advanceDayButton.gameObject.SetActive(false);
+            }
         }
     }
 }

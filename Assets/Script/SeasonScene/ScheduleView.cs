@@ -14,6 +14,7 @@ public class ScheduleView : MonoBehaviour
     [SerializeField] private Transform contentParent;
     [SerializeField] private ScheduleCell scheduleCellPrefab;
     [SerializeField] private TMP_Text dateLabel;
+    [SerializeField] private ScrollRect scrollRect; // 스크롤뷰의 ScrollRect 컴포넌트
 
     private string _userTeamAbbr;
     private int _currentSeason;
@@ -119,23 +120,27 @@ public class ScheduleView : MonoBehaviour
         // 내 팀의 예정된 경기가 있는지 확인
         _userGameOnSelectedDate = games.FirstOrDefault(g => 
             (g.HomeTeamAbbr == _userTeamAbbr || g.AwayTeamAbbr == _userTeamAbbr) && g.GameStatus == "Scheduled");
+
+        StartCoroutine(RebuildLayoutAndResetScroll());
     }
 
-    private void OnStartGameClicked()
+    /// <summary>
+    /// 레이아웃을 갱신하고 스크롤 위치를 최상단으로 리셋합니다.
+    /// </summary>
+    private System.Collections.IEnumerator RebuildLayoutAndResetScroll()
     {
-        if (_userGameOnSelectedDate == null)
+        yield return new WaitForEndOfFrame();
+        if (contentParent != null)
         {
-            Debug.LogError("시작할 경기가 선택되지 않았습니다.");
-            return;
+            RectTransform rt = contentParent as RectTransform;
+            UnityEngine.UI.LayoutRebuilder.ForceRebuildLayoutImmediate(rt);
+            float prefH2 = UnityEngine.UI.LayoutUtility.GetPreferredHeight(rt);
+            rt.SetSizeWithCurrentAnchors(RectTransform.Axis.Vertical, prefH2);
         }
-
-        // GameDataHolder에 선택된 경기 정보를 저장
-        GameDataHolder.CurrentGameInfo = _userGameOnSelectedDate;
-
-        Debug.Log($"경기 시작: {_userGameOnSelectedDate.GameId}. gamelogic_test 씬으로 이동합니다.");
-        
-        // 경기 씬 로드
-        UnityEngine.SceneManagement.SceneManager.LoadScene("gamelogic_test");
+        if (scrollRect != null)
+        {
+            scrollRect.normalizedPosition = new Vector2(0, 1); // 최상단으로 스크롤
+        }
     }
 
     private void UpdateDateLabel(DateTime dt)

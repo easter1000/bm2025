@@ -1,29 +1,20 @@
-using System;
-using madcamp3.Assets.Script.Player;
 using System.Collections.Generic;
-using System.Linq;
-using UnityEngine;
+using madcamp3.Assets.Script.Player;
 
-[Serializable]
 public class TeamData
 {
     public int teamId;
     public string teamName;
-    public List<PlayerLine> playerLines;
     public string abbreviation;
-    public Color teamColor;
+    public List<PlayerLine> players;
+    public string teamColor;
 
-    public TeamData(int id, string name, string abbreviation, List<PlayerLine> playersDetailed, String color)
+    public TeamData(int id, string name, string abbr, List<PlayerLine> playerList, string color)
     {
-        this.teamId = id;
-        this.teamName = name;
-        this.abbreviation = abbreviation;
-        this.playerLines = playersDetailed;
-        this.teamColor = Color.black;
-        Color tempColor;
-        if (ColorUtility.TryParseHtmlString(color, out tempColor))
-        {
-            this.teamColor = tempColor;
-        }
+        teamId = id;
+        teamName = name;
+        abbreviation = abbr;
+        players = playerList;
+        teamColor = color;
     }
-}
+} 

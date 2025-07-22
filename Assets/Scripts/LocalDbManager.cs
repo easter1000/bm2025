@@ -28,6 +28,19 @@ public class LocalDbManager : MonoBehaviour
     private SQLiteConnection _db;
     private string _dbPath;
 
+    // [수정] 데이터베이스 연결에 안전하게 접근하기 위한 속성
+    private SQLiteConnection Connection
+    {
+        get
+        {
+            if (_db == null)
+            {
+                InitializeDatabase();
+            }
+            return _db;
+        }
+    }
+
     void Awake()
     {
         if (_instance != null && _instance != this)
@@ -42,6 +55,8 @@ public class LocalDbManager : MonoBehaviour
 
     private void InitializeDatabase()
     {
+        if (_db != null) return; // [수정] 중복 초기화 방지
+
         _dbPath = Path.Combine(Application.persistentDataPath, "game_records.db");
         bool firstRun = !File.Exists(_dbPath);
         _db = new SQLiteConnection(_dbPath, SQLiteOpenFlags.ReadWrite | SQLiteOpenFlags.Create);
@@ -128,7 +143,7 @@ public class LocalDbManager : MonoBehaviour
             if (!teamSalaries.ContainsKey(p.team)) teamSalaries[p.team] = 0;
             teamSalaries[p.team] += annualSalary;
         }
-        _db.InsertAll(ratings); _db.InsertAll(statuses);
+        Connection.InsertAll(ratings); Connection.InsertAll(statuses);
         Debug.Log($"[DB] Populated PlayerRating and PlayerStatus with {playerList.players.Length} players.");
         
         // --- 2. 팀 데이터 로드 및 처리 ---
@@ -179,7 +194,7 @@ public class LocalDbManager : MonoBehaviour
             }
             teams.Add(new Team { team_id = t.team_id, team_name = t.team_name, team_abbv = t.team_abbv, conference = t.conference, division = t.division, team_color = t.team_color, team_logo = t.team_logo, best_five = string.Join(",", starterIds) });
         }
-        _db.InsertAll(teams);
+        Connection.InsertAll(teams);
         Debug.Log($"[DB] Populated Team with {teams.Count} teams and calculated best five.");
 
         // --- 3. 팀 재정 데이터 처리 ---
@@ -205,14 +220,14 @@ public class LocalDbManager : MonoBehaviour
                 TeamBudget = 200000000 
             });
         }
-        _db.InsertAll(teamFinances);
+        Connection.InsertAll(teamFinances);
         Debug.Log($"[DB] Populated TeamFinance for {teamFinances.Count} teams.");
     }
 
     #region Public DB Accessors
     
     // --- User ---
-    public User GetUser() => _db.Table<User>().FirstOrDefault();
+    public User GetUser() => Connection.Table<User>().FirstOrDefault();
 
     // --- NEW: Save or update the current user information ---
     public void SaveOrUpdateUser(string coachName, string selectedTeamAbbr, int currentSeason = 2025)
@@ -233,7 +248,7 @@ public class LocalDbManager : MonoBehaviour
                 CurrentSeason = currentSeason,
                 CurrentDate = today
             };
-            _db.Insert(newUser);
+            Connection.Insert(newUser);
             Debug.Log("[DB] User record created.");
         }
         else
@@ -242,7 +257,7 @@ public class LocalDbManager : MonoBehaviour
             existing.CoachName = coachName;
             existing.SelectedTeamAbbr = selectedTeamAbbr;
             existing.CurrentSeason = currentSeason;
-            _db.Update(existing);
+            Connection.Update(existing);
             Debug.Log("[DB] User record updated (name/team/season).");
         }
     }
@@ -259,7 +274,7 @@ public class LocalDbManager : MonoBehaviour
             {
                 DateTime nextDate = currentDate.AddDays(1);
                 existing.CurrentDate = nextDate.ToString("yyyy-MM-dd");
-                _db.Update(existing);
+                Connection.Update(existing);
                 Debug.Log($"[DB] User date advanced to {existing.CurrentDate}.");
             }
             else
@@ -270,17 +285,17 @@ public class LocalDbManager : MonoBehaviour
     }
 
     // --- Team & Schedule ---
-    public List<Team> GetAllTeams() => _db.Table<Team>().ToList();
-    public Team GetTeam(string teamAbbr) => _db.Table<Team>().FirstOrDefault(t => t.team_abbv == teamAbbr);
-    public Team GetTeam(int teamId) => _db.Find<Team>(teamId);
-    public TeamFinance GetTeamFinance(string teamAbbr, int season) => _db.Table<TeamFinance>().FirstOrDefault(f => f.TeamAbbr == teamAbbr && f.Season == season);
-    public void ClearScheduleTable() { _db.DropTable<Schedule>(); _db.CreateTable<Schedule>(); Debug.Log("[DB] Schedule table cleared and recreated."); }
-    public void InsertSchedule(List<Schedule> schedule) => _db.InsertAll(schedule);
-    public List<Schedule> GetGamesForDate(string date) => _db.Table<Schedule>().Where(g => g.GameDate == date && g.GameStatus == "Scheduled").ToList();
+    public List<Team> GetAllTeams() => Connection.Table<Team>().ToList();
+    public Team GetTeam(string teamAbbr) => Connection.Table<Team>().FirstOrDefault(t => t.team_abbv == teamAbbr);
+    public Team GetTeam(int teamId) => Connection.Find<Team>(teamId);
+    public TeamFinance GetTeamFinance(string teamAbbr, int season) => Connection.Table<TeamFinance>().FirstOrDefault(f => f.TeamAbbr == teamAbbr && f.Season == season);
+    public void ClearScheduleTable() { Connection.DropTable<Schedule>(); Connection.CreateTable<Schedule>(); Debug.Log("[DB] Schedule table cleared and recreated."); }
+    public void InsertSchedule(List<Schedule> schedule) => Connection.InsertAll(schedule);
+    public List<Schedule> GetGamesForDate(string date) => Connection.Table<Schedule>().Where(g => g.GameDate == date && g.GameStatus == "Scheduled").ToList();
     public void UpdateGameResult(string gameId, int homeScore, int awayScore)
     {
-        var game = _db.Find<Schedule>(gameId);
-        if (game != null) { game.HomeTeamScore = homeScore; game.AwayTeamScore = awayScore; game.GameStatus = "Final"; _db.Update(game); }
+        var game = Connection.Find<Schedule>(gameId);
+        if (game != null) { game.HomeTeamScore = homeScore; game.AwayTeamScore = awayScore; game.GameStatus = "Final"; Connection.Update(game); }
     }
     public void UpdateTeamWinLossRecord(string teamAbbr, bool won, int season)
     {
@@ -289,30 +304,30 @@ public class LocalDbManager : MonoBehaviour
         {
             if (won) teamFinance.Wins++;
             else teamFinance.Losses++;
-            _db.Update(teamFinance);
+            Connection.Update(teamFinance);
         }
     }
     public List<Schedule> GetScheduleForTeam(string teamAbbr, int season)
     {
         // 특정 팀의 한 시즌 전체 경기 일정을 가져옵니다.
-        return _db.Table<Schedule>()
+        return Connection.Table<Schedule>()
                 .Where(g => (g.HomeTeamAbbr == teamAbbr || g.AwayTeamAbbr == teamAbbr) && g.Season == season)
                 .OrderBy(g => g.GameDate)
                 .ToList();
     }
     // --- Player ---
-    public PlayerRating GetPlayerRating(int playerId) => _db.Find<PlayerRating>(playerId);
-    public List<PlayerRating> GetAllPlayerRatings() => _db.Table<PlayerRating>().ToList();
+    public PlayerRating GetPlayerRating(int playerId) => Connection.Find<PlayerRating>(playerId);
+    public List<PlayerRating> GetAllPlayerRatings() => Connection.Table<PlayerRating>().ToList();
     // 팀 약어(예: "DAL") 또는 전체 팀명("Dallas Mavericks") 어느 쪽이든 받아서 해당 팀 선수 목록을 반환합니다.
     public List<PlayerRating> GetPlayersByTeam(string teamIdentifier)
     {
         // 먼저 Team 테이블에서 매칭되는 엔티티를 찾아 전체 이름과 약어를 모두 확보합니다.
-        Team teamEntity = _db.Table<Team>().FirstOrDefault(t => t.team_abbv == teamIdentifier || t.team_name == teamIdentifier);
+        Team teamEntity = Connection.Table<Team>().FirstOrDefault(t => t.team_abbv == teamIdentifier || t.team_name == teamIdentifier);
 
         if (teamEntity == null)
         {
             // Team 테이블에 없으면 식별자를 그대로 사용하여 검색합니다.
-            return _db.Table<PlayerRating>().Where(p => p.team == teamIdentifier).ToList();
+            return Connection.Table<PlayerRating>().Where(p => p.team == teamIdentifier).ToList();
         }
 
         string fullName = teamEntity.team_name;
@@ -320,17 +335,17 @@ public class LocalDbManager : MonoBehaviour
 
         // PlayerRating.team 컬럼은 현재 전체 팀명을 저장하고 있으므로 우선 전체 이름으로 검색한 뒤,
         // 혹시라도 약어로 저장된 데이터가 있을 가능성까지 대비해 약어도 함께 포함합니다.
-        return _db.Table<PlayerRating>()
+        return Connection.Table<PlayerRating>()
                  .Where(p => p.team == fullName || p.team == abbr)
                  .ToList();
     }
 
     public PlayerStatus GetPlayerStatus(int playerId)
     {
-        return _db.Table<PlayerStatus>().FirstOrDefault(s => s.PlayerId == playerId);
+        return Connection.Table<PlayerStatus>().FirstOrDefault(s => s.PlayerId == playerId);
     }
 
-    public void InsertPlayerStats(List<PlayerStat> stats) => _db.InsertAll(stats);
+    public void InsertPlayerStats(List<PlayerStat> stats) => Connection.InsertAll(stats);
 
     /// <summary>
     /// 특정 선수를 DB에서 방출하여 FA(자유 계약) 상태로 만듭니다.
@@ -341,7 +356,7 @@ public class LocalDbManager : MonoBehaviour
         if (rating != null)
         {
             rating.team = "FA"; // Free Agent
-            _db.Update(rating);
+            Connection.Update(rating);
         }
 
         var status = GetPlayerStatus(playerId);
@@ -349,7 +364,7 @@ public class LocalDbManager : MonoBehaviour
         {
             status.Salary = 0;
             status.YearsLeft = 0;
-            _db.Update(status);
+            Connection.Update(status);
         }
     }
 
@@ -360,7 +375,7 @@ public class LocalDbManager : MonoBehaviour
     {
         var allTeams = GetAllTeams();
         var allRatings = GetAllPlayerRatings();
-        var allStatuses = _db.Table<PlayerStatus>().ToList();
+        var allStatuses = Connection.Table<PlayerStatus>().ToList();
 
         foreach (var team in allTeams)
         {
@@ -380,7 +395,7 @@ public class LocalDbManager : MonoBehaviour
             if (teamFinance != null)
             {
                 teamFinance.CurrentTeamSalary = totalAnnualSalary;
-                _db.Update(teamFinance);
+                Connection.Update(teamFinance);
             }
         }
         Debug.Log("[DB] All team salaries have been recalculated and updated.");
@@ -388,18 +403,18 @@ public class LocalDbManager : MonoBehaviour
 
     public List<TeamFinance> GetTeamFinancesForSeason(int season)
     {
-        return _db.Table<TeamFinance>().Where(t => t.Season == season).ToList();
+        return Connection.Table<TeamFinance>().Where(t => t.Season == season).ToList();
     }
 
     public void UpdatePlayerTeam(List<int> playerIds, string newTeamAbbr)
     {
         foreach (int playerId in playerIds)
         {
-            var player = _db.Find<PlayerRating>(p => p.player_id == playerId);
+            var player = Connection.Find<PlayerRating>(p => p.player_id == playerId);
             if (player != null)
             {
                 player.team = newTeamAbbr;
-                _db.Update(player);
+                Connection.Update(player);
             }
         }
     }

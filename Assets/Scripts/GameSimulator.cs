@@ -105,6 +105,7 @@ public class GameSimulator : MonoBehaviour
         public float ShotClockSeconds = 24f;
         public int PossessingTeamId = 0; // 0 for home, 1 for away
         public GamePlayer LastPasser; // For assist tracking
+        public GamePlayer CurrentBallHandler; // [신규] 현재 공을 가진 선수
     }
     
     public class GameLogEntry
@@ -178,16 +179,21 @@ public class GameSimulator : MonoBehaviour
         UpdateAllPlayerStamina(gameTimeDelta);
         UpdatePlayerTime(gameTimeDelta);
 
+        // _timeUntilNextPossession은 각 행동 노드에서 설정됨
         if (_timeUntilNextPossession <= 0)
         {
-            GamePlayer ballHandler = GetRandomAttacker();
-            if(ballHandler != null) 
+            // 공을 가진 선수가 없으면 (새 공격 시작), 공격팀에서 한 명을 정함
+            if (CurrentState.CurrentBallHandler == null)
             {
-                CurrentState.LastPasser = null; 
-                _rootOffenseNode.Evaluate(this, ballHandler);
+                CurrentState.CurrentBallHandler = GetRandomAttacker();
+                CurrentState.LastPasser = null; // 새 공격이므로 어시스트 기록 초기화
             }
-            // 공격 속도 조절: 다음 공격까지의 시간을 10-20초에서 12-24초로 늘려 템포를 늦춤
-            _timeUntilNextPossession = UnityEngine.Random.Range(12f, 24f); 
+
+            // 공을 가진 선수가 있으면 행동 개시
+            if(CurrentState.CurrentBallHandler != null) 
+            {
+                _rootOffenseNode.Evaluate(this, CurrentState.CurrentBallHandler);
+            }
         }
 
         if (_timeUntilNextSubCheck <= 0)
@@ -225,6 +231,7 @@ public class GameSimulator : MonoBehaviour
             else
             {
                 CurrentState.GameClockSeconds = 720f;
+                CurrentState.ShotClockSeconds = 24f; // 새 쿼터 시작 시 샷클락 리셋
                 AddLog($"--- Start of Quarter {CurrentState.Quarter} ---");
             }
         }
@@ -306,30 +313,33 @@ public class GameSimulator : MonoBehaviour
     {
         _rootOffenseNode = new Selector(new List<Node> {
             // 최우선 순위: 공격 시간이 5초 미만으로 쫓기는 상황
+            // (이전 로직과 동일)
             new Sequence(new List<Node> {
                 new Condition_IsShotClockLow(),
-                new Selector(new List<Node> { // 성공률 낮은 버전의 슛 노드들 사용
+                new Selector(new List<Node> { 
                     new Sequence(new List<Node> { new Condition_IsOpenFor3(), new Action_TryForced3PointShot() }),
                     new Sequence(new List<Node> { new Condition_CanDrive(), new Action_TryForcedDrive() }),
                     new Sequence(new List<Node> { new Condition_IsGoodForMidRange(), new Action_TryForcedMidRangeShot() }),
-                    new Action_TryForced3PointShot() // 최후의 수단으로 그냥 3점 시도
+                    new Action_TryForced3PointShot()
                 })
             }),
 
-            // 일반적인 공격 상황 (공격 시간 넉넉함)
+            // 일반적인 공격 상황: 공격성을 높이고 패스와 슛의 균형을 맞춘 새로운 구조
             new Selector(new List<Node> {
-                // 패스를 1~2회 시도하여 더 좋은 기회를 모색
-                new Sequence(new List<Node> { new Condition_IsGoodPassOpportunity(), new Action_PassToBestTeammate() }),
+                // 1. 아주 좋은 패스 기회가 있으면 먼저 고려
                 new Sequence(new List<Node> { new Condition_IsGoodPassOpportunity(), new Action_PassToBestTeammate() }),
                 
-                // 다양한 공격 옵션 중 하나를 선택 (Selector 활용)
+                // 2. 슛 기회를 먼저 탐색
                 new Selector(new List<Node> {
                     new Sequence(new List<Node> { new Condition_IsOpenFor3(), new Action_Try3PointShot() }),
                     new Sequence(new List<Node> { new Condition_CanDrive(), new Action_DriveAndFinish() }),
                     new Sequence(new List<Node> { new Condition_IsGoodForMidRange(), new Action_TryMidRangeShot() })
                 }),
 
-                // 위에서 아무것도 선택되지 않았다면, 마지막으로 패스 시도
+                // 3. 슛 기회가 마땅치 않으면 다시 패스 시도
+                new Sequence(new List<Node> { new Condition_IsGoodPassOpportunity(), new Action_PassToBestTeammate() }),
+
+                // 4. 그래도 할 게 없으면 억지로라도 패스
                 new Action_PassToBestTeammate()
             })
         });
@@ -454,13 +464,15 @@ public class GameSimulator : MonoBehaviour
         var onCourtAttackers = GetPlayersOnCourt(CurrentState.PossessingTeamId);
         if (onCourtAttackers.Count == 0) return null;
 
-        float totalWeight = onCourtAttackers.Sum(p => p.Rating.overallAttribute);
+        // 에이스에게 공이 갈 확률을 높이기 위해 OVR에 제곱 가중치 적용
+        float totalWeight = onCourtAttackers.Sum(p => Mathf.Pow(p.Rating.overallAttribute, 2.5f));
         float randomPoint = UnityEngine.Random.Range(0, totalWeight);
 
         foreach (var player in onCourtAttackers)
         {
-            if (randomPoint < player.Rating.overallAttribute) return player;
-            randomPoint -= player.Rating.overallAttribute;
+            float weight = Mathf.Pow(player.Rating.overallAttribute, 2.5f);
+            if (randomPoint < weight) return player;
+            randomPoint -= weight;
         }
         return onCourtAttackers.FirstOrDefault();
     }
@@ -503,7 +515,7 @@ public class GameSimulator : MonoBehaviour
     {
         ConsumeTime(UnityEngine.Random.Range(2, 5));
         var allPlayers = GetAllPlayersOnCourt();
-        var reboundScores = new Dictionary<GamePlayer, float>();
+        var reboundScores = new Dictionary<GameSimulator.GamePlayer, float>();
         float totalScore = 0;
 
         foreach (var p in allPlayers)
@@ -516,23 +528,26 @@ public class GameSimulator : MonoBehaviour
         }
 
         float randomPoint = UnityEngine.Random.Range(0, totalScore);
-        GamePlayer rebounder = reboundScores.FirstOrDefault(p => { randomPoint -= p.Value; return randomPoint < 0; }).Key;
+        GameSimulator.GamePlayer rebounder = reboundScores.FirstOrDefault(p => { randomPoint -= p.Value; return randomPoint < 0; }).Key;
         if (rebounder == null) rebounder = allPlayers.FirstOrDefault();
 
         if (rebounder.TeamId == shooter.TeamId)
         {
             rebounder.Stats.OffensiveRebounds++;
             AddLog($"{rebounder.Rating.name} grabs the offensive rebound!");
-            CurrentState.ShotClockSeconds = 14f; // 공격 리바운드 시 14초로 리셋
+            CurrentState.ShotClockSeconds = 14f;
             CurrentState.PossessingTeamId = rebounder.TeamId;
+            CurrentState.CurrentBallHandler = rebounder; // 공 잡은 선수 설정
+            CurrentState.LastPasser = null; // 리바운드는 어시스트 기회를 무효화
         }
         else
         {
             rebounder.Stats.DefensiveRebounds++;
             AddLog($"{rebounder.Rating.name} grabs the defensive rebound.");
             CurrentState.PossessingTeamId = rebounder.TeamId;
-            CurrentState.ShotClockSeconds = 24f; // 수비 리바운드 시 24초로 리셋
-            CurrentState.LastPasser = null;
+            CurrentState.ShotClockSeconds = 24f;
+            CurrentState.CurrentBallHandler = rebounder; // 공 잡은 선수 설정
+            CurrentState.LastPasser = null; // 공격권 전환, 어시스트 초기화
         }
     }
     
