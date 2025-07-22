@@ -3,6 +3,7 @@ using UnityEngine.UI;
 using TMPro;
 using UnityEngine.SceneManagement;
 using System;
+using System.Linq; // Added for FirstOrDefault
 
 /// <summary>
 /// 시즌 씬에서 상단(또는 좌측) 탭 버튼을 관리하는 매니저.
@@ -31,6 +32,11 @@ public class SeasonSceneManager : MonoBehaviour
     [SerializeField] private TMP_Text currentDateText;
     [SerializeField] private TMP_Text currentBudgetText;
 
+    [Header("Dialogs")]
+    [SerializeField] private ConfirmDialog confirmDialog;
+
+    private TradeManager _tradeManager;
+
     private void Awake()
     {
         // 버튼 이벤트 등록
@@ -39,11 +45,23 @@ public class SeasonSceneManager : MonoBehaviour
         if (tradeButton) tradeButton.onClick.AddListener(OnTradeClicked);
         if (recordButton) recordButton.onClick.AddListener(OnRecordClicked);
         if (quitButton) quitButton.onClick.AddListener(OnQuitClicked);
+
+        _tradeManager = FindObjectOfType<TradeManager>();
+        if (_tradeManager == null)
+        {
+            Debug.LogError("[SeasonSceneManager] TradeManager를 찾을 수 없습니다!");
+        }
     }
 
     private void OnEnable()
     {
         UpdateHeaderUI();
+        SeasonManager.OnTradeOfferedToUser += HandleTradeOffer;
+    }
+
+    private void OnDisable()
+    {
+        SeasonManager.OnTradeOfferedToUser -= HandleTradeOffer;
     }
 
     private void Start()
@@ -54,6 +72,57 @@ public class SeasonSceneManager : MonoBehaviour
         // 상단(좌측) 헤더 UI 업데이트
         UpdateHeaderUI();
     }
+
+    /// <summary>
+    /// AI 팀으로부터 온 트레이드 제안을 처리하고 다이얼로그를 띄운다.
+    /// </summary>
+    private void HandleTradeOffer(TradeOffer offer)
+    {
+        if (confirmDialog == null)
+        {
+            Debug.LogError("[SeasonSceneManager] ConfirmDialog가 연결되지 않았습니다.");
+            return;
+        }
+
+        // 트레이드 제안 내용 메시지 생성
+        var offeredPlayer = offer.PlayersOfferedByProposingTeam.FirstOrDefault();
+        var requestedPlayer = offer.PlayersRequestedFromTargetTeam.FirstOrDefault();
+
+        if (offeredPlayer == null || requestedPlayer == null) return;
+
+        string message = $"{offer.ProposingTeam.team_name}에서 트레이드를 제안했습니다:\n\n" +
+                         $"<color=green>주는 선수: {offeredPlayer.name} (OVR: {offeredPlayer.overallAttribute})</color>\n" +
+                         $"<color=red>받는 선수: {requestedPlayer.name} (OVR: {requestedPlayer.overallAttribute})</color>\n\n" +
+                         "수락하시겠습니까?";
+
+        // 다이얼로그 띄우기
+        confirmDialog.Show(
+            message,
+            onYes: () => {
+                // '예'를 눌렀을 때: 트레이드 실행
+                bool success = _tradeManager.ExecuteTrade(
+                    offer.ProposingTeam.team_abbv, offer.PlayersOfferedByProposingTeam,
+                    offer.TargetTeam.team_abbv, offer.PlayersRequestedFromTargetTeam
+                );
+
+                if (success)
+                {
+                    Debug.Log("트레이드가 성공적으로 성사되었습니다!");
+                    UpdateHeaderUI(); // 예산 등 정보 업데이트
+                    // TODO: 팀 관리 패널 등 다른 UI도 새로고침 필요
+                }
+                else
+                {
+                    Debug.Log("트레이드가 실패했습니다.");
+                }
+            },
+            onNo: () => {
+                // '아니오'를 눌렀을 때: 아무것도 안 함
+                Debug.Log("트레이드를 거절했습니다.");
+            }
+        );
+    }
+
 
     /// <summary>
     /// 사용자 팀 로고, 팀 이름, 현재 날짜, 예산 등을 화면에 업데이트한다.

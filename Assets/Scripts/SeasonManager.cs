@@ -37,6 +37,9 @@ public class SeasonManager : MonoBehaviour
     // private float _dayTimer = 0f; // 더 이상 사용하지 않음
     private string _userTeamAbbr; // 유저 팀 약어 저장
 
+    // AI가 유저에게 트레이드를 제안할 때 발생하는 이벤트
+    public static event Action<TradeOffer> OnTradeOfferedToUser;
+
     void Awake()
     {
         if (_instance != null && _instance != this)
@@ -113,45 +116,181 @@ public class SeasonManager : MonoBehaviour
     /// </summary>
     public void AttemptAiToAiTrades()
     {
-        if (_tradeManager == null) return; // TradeManager가 없으면 트레이드 시도 안 함
+        if (_tradeManager == null) 
+        {
+            Debug.LogError("TradeManager is not initialized!");
+            _tradeManager = FindAnyObjectByType<TradeManager>();
+            if (_tradeManager == null) return;
+        }
+        if (_dbManager == null) _dbManager = LocalDbManager.Instance;
 
-        // 매일 호출되므로, 이 로그는 너무 자주 나타나지 않도록 주석 처리합니다.
-        // Debug.Log("AI 팀들의 트레이드 시장을 확인합니다...");
+        _userTeamAbbr = _dbManager.GetUser()?.SelectedTeamAbbr;
+        _currentSeason = _dbManager.GetUser()?.CurrentSeason ?? DateTime.Now.Year;
 
         List<Team> allTeams = _dbManager.GetAllTeams();
         var teamFinances = _dbManager.GetTeamFinancesForSeason(_currentSeason)
                                      .ToDictionary(f => f.TeamAbbr);
         
-        // 유저 팀을 제외한 AI 팀 목록
-        List<Team> aiTeams = allTeams.Where(t => t.team_abbv != _userTeamAbbr).ToList();
-        Team userTeam = allTeams.FirstOrDefault(t => t.team_abbv == _userTeamAbbr);
+        List<Team> aiTeams = allTeams.Where(t => t.team_abbv != _userTeamAbbr && t.team_abbv != "FA").ToList();
 
-        // AI <-> AI 트레이드
+        // 1. 예산 초과 팀 강제 구조조정
+        foreach (var team in aiTeams)
+        {
+            var finance = teamFinances.GetValueOrDefault(team.team_abbv);
+            if (finance == null || finance.CurrentTeamSalary <= finance.TeamBudget) continue;
+
+            Debug.LogWarning($"[Salary Cap] {team.team_abbv} is over budget! Salary: ${finance.CurrentTeamSalary:N0}, Budget: ${finance.TeamBudget:N0}. Attempting to resolve...");
+
+            bool tradeResolved = AttemptSalaryCapTrade(team, teamFinances);
+            
+            if (!tradeResolved)
+            {
+                ReleaseLowValuePlayersUntilBudgetMet(team, teamFinances);
+            }
+        }
+
+        // 2. 일반 AI 트레이드 시도
         for (int i = 0; i < aiTeams.Count; i++)
         {
             for (int j = i + 1; j < aiTeams.Count; j++)
             {
-                // [수정] 트레이드 빈도 상향 (1% -> 4%)
-                if (UnityEngine.Random.Range(0, 100) < 25)
+                if (UnityEngine.Random.Range(0, 100) < 5) // 5% 확률로 트레이드 시도
                 {
-                    ProposeTradeBetweenTeams(aiTeams[i], aiTeams[j], teamFinances);
+                    ProposeFairTradeBetweenTeams(aiTeams[i], aiTeams[j], teamFinances);
                 }
             }
         }
-
-        // AI -> User 트레이드 제안
+        
+        // 3. AI -> User 트레이드 제안
+        Team userTeam = allTeams.FirstOrDefault(t => t.team_abbv == _userTeamAbbr);
         if (userTeam != null)
         {
             foreach (var aiTeam in aiTeams)
             {
-                // [수정] 트레이드 빈도 상향 (0.3% -> 1.5%)
-                if (UnityEngine.Random.Range(0, 1000) < 15)
+                if (UnityEngine.Random.Range(0, 1000) < 15) // 1.5% 확률
                 {
-                    ProposeTradeBetweenTeams(aiTeam, userTeam, teamFinances, true);
+                    // 이 부분은 GenerateAndProposeSmartTrade를 재활용하거나 새 로직을 만들어야 함
+                    ProposeTradeToUser(aiTeam, userTeam, teamFinances);
                 }
             }
         }
     }
+
+    private void ProposeTradeToUser(Team aiTeam, Team userTeam, Dictionary<string, TeamFinance> finances)
+    {
+        // 기존의 스마트 트레이드 제안 로직을 그대로 활용
+        GenerateAndProposeSmartTrade(aiTeam, finances[aiTeam.team_abbv], userTeam, finances[userTeam.team_abbv], true);
+    }
+
+    private bool AttemptSalaryCapTrade(Team overBudgetTeam, Dictionary<string, TeamFinance> finances)
+    {
+        var overBudgetRoster = _dbManager.GetPlayersByTeamWithStatus(overBudgetTeam.team_abbv);
+        
+        // 연봉 높은 순으로 선수 정렬
+        var sortedRoster = overBudgetRoster.OrderByDescending(p => p.Status.Salary).ToList();
+
+        // 예산에 여유가 있는 팀 찾기
+        var potentialPartners = finances.Where(f => f.Value.CurrentTeamSalary < f.Value.TeamBudget && f.Key != overBudgetTeam.team_abbv && f.Key != _userTeamAbbr)
+                                        .ToList();
+
+        foreach (var myPlayer in sortedRoster)
+        {
+            if (myPlayer.Status.Salary == 0) continue;
+
+            foreach (var partnerEntry in potentialPartners)
+            {
+                var partnerTeam = _dbManager.GetTeam(partnerEntry.Key);
+                var partnerRoster = _dbManager.GetPlayersByTeamWithStatus(partnerTeam.team_abbv);
+
+                // 상대팀에서는 저연봉 선수 찾기
+                var theirPlayer = partnerRoster.OrderBy(p => p.Status.Salary).FirstOrDefault();
+                
+                if (theirPlayer == null) continue;
+
+                // 연봉 차이가 커야 트레이드 의미가 있음
+                if (myPlayer.Status.Salary > theirPlayer.Status.Salary)
+                {
+                    Debug.Log($"[Salary Cap Trade] Attempting: {overBudgetTeam.team_abbv} gives {myPlayer.Rating.name}(${myPlayer.Status.Salary:N0}) for {partnerTeam.team_abbv}'s {theirPlayer.Rating.name}(${theirPlayer.Status.Salary:N0})");
+                    
+                    bool success = _tradeManager.EvaluateAndExecuteTrade(
+                        overBudgetTeam.team_abbv, new List<PlayerRating>{ myPlayer.Rating },
+                        partnerTeam.team_abbv, new List<PlayerRating>{ theirPlayer.Rating }
+                    );
+
+                    if (success)
+                    {
+                        Debug.Log("[Salary Cap Trade] Success!");
+                        // 재정 정보 즉시 업데이트
+                        finances[overBudgetTeam.team_abbv].CurrentTeamSalary -= (myPlayer.Status.Salary - theirPlayer.Status.Salary);
+                        finances[partnerTeam.team_abbv].CurrentTeamSalary += (myPlayer.Status.Salary - theirPlayer.Status.Salary);
+                        return true; // 트레이드 성공
+                    }
+                }
+            }
+        }
+
+        return false; // 적절한 트레이드 대상을 찾지 못함
+    }
+
+    private void ReleaseLowValuePlayersUntilBudgetMet(Team team, Dictionary<string, TeamFinance> finances)
+    {
+        var finance = finances[team.team_abbv];
+        var roster = _dbManager.GetPlayersByTeamWithStatus(team.team_abbv)
+                                .OrderBy(p => p.Rating.currentValue)
+                                .ToList();
+        
+        Debug.LogWarning($"[Salary Cap] {team.team_abbv} failed to find a trade. Releasing players...");
+
+        foreach (var playerInfo in roster)
+        {
+            if (finance.CurrentTeamSalary <= finance.TeamBudget) break;
+
+            Debug.Log($"[Salary Cap] Releasing {playerInfo.Rating.name} (Value: {playerInfo.Rating.currentValue}, Salary: ${playerInfo.Status.Salary:N0})");
+            
+            // 선수를 FA로 보냄
+            _dbManager.UpdatePlayerTeam(playerInfo.Rating.player_id, "FA");
+            
+            // 재정 정보 업데이트
+            finance.CurrentTeamSalary -= playerInfo.Status.Salary;
+            _dbManager.UpdateTeamFinance(finance);
+        }
+
+        if (finance.CurrentTeamSalary > finance.TeamBudget)
+        {
+            Debug.LogError($"[Salary Cap] CRITICAL: {team.team_abbv} could not get under budget even after releasing players!");
+        }
+        else
+        {
+            Debug.Log($"[Salary Cap] {team.team_abbv} is now under budget. New Salary: ${finance.CurrentTeamSalary:N0}");
+        }
+    }
+
+    private void ProposeFairTradeBetweenTeams(Team teamA, Team teamB, Dictionary<string, TeamFinance> finances)
+    {
+        var rosterA = _dbManager.GetPlayersByTeam(teamA.team_abbv).OrderByDescending(p => p.currentValue).ToList();
+        var rosterB = _dbManager.GetPlayersByTeam(teamB.team_abbv).OrderByDescending(p => p.currentValue).ToList();
+
+        if (rosterA.Count < 2 || rosterB.Count < 2) return;
+
+        // 양 팀에서 비슷한 가치의 선수 찾기 (예: 2~5번째 선수 중 랜덤)
+        int rank = UnityEngine.Random.Range(1, Math.Min(5, Math.Min(rosterA.Count, rosterB.Count)));
+        PlayerRating playerA = rosterA[rank];
+        PlayerRating playerB = rosterB[rank];
+        
+        // 가치 차이가 너무 크면 트레이드 중단 (예: 20% 이상 차이)
+        if (Mathf.Abs(playerA.currentValue - playerB.currentValue) / playerA.currentValue > 0.2f)
+        {
+            return;
+        }
+        
+        Debug.Log($"[Fair Trade] Proposing trade between {teamA.team_abbv} and {teamB.team_abbv}: {playerA.name} <-> {playerB.name}");
+
+        _tradeManager.EvaluateAndExecuteTrade(
+            teamA.team_abbv, new List<PlayerRating> { playerA },
+            teamB.team_abbv, new List<PlayerRating> { playerB }
+        );
+    }
+
 
     private void ProposeTradeBetweenTeams(Team teamA, Team teamB, Dictionary<string, TeamFinance> finances, bool isUserTeamInvolved = false)
     {
@@ -194,14 +333,14 @@ public class SeasonManager : MonoBehaviour
         
         if (isUserTeamInvolved)
         {
-            // TODO: 실제로는 UI 팝업을 띄우고 유저의 결정을 기다려야 함
-            // public static event Action<TradeOffer> OnTradeOfferedToUser;
-            // OnTradeOfferedToUser?.Invoke(new TradeOffer(teamA, playerToTradeFromA, teamB, playerToTradeFromB));
-            Debug.LogWarning($"[USER TRADE PROPOSAL] {teamA.team_abbv}에서 트레이드를 제안했습니다!");
-            Debug.LogWarning($"  - 주는 선수: {playerToTradeFromA.name} ({playerToTradeFromA.currentValue:F1})");
-            Debug.LogWarning($"  - 받는 선수: {playerToTradeFromB.name} ({playerToTradeFromB.currentValue:F1})");
-            // 지금은 자동으로 거절하는 것으로 처리
-            Debug.Log("  (자동으로 거절되었습니다.)");
+            // [수정] UI 팝업을 띄우기 위해 이벤트를 발생시킴
+            var offer = new TradeOffer(
+                teamA, new List<PlayerRating> { playerToTradeFromA },
+                teamB, new List<PlayerRating> { playerToTradeFromB }
+            );
+            OnTradeOfferedToUser?.Invoke(offer);
+
+            Debug.Log($"[USER TRADE PROPOSAL] {teamA.team_abbv} offers {playerToTradeFromA.name} for {teamB.team_abbv}'s {playerToTradeFromB.name}");
         }
         else
         {

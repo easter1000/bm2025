@@ -136,3 +136,13 @@ public class Schedule
     
     public string GameStatus { get; set; } // "Scheduled", "Final" 등
 }
+
+/// <summary>
+/// TradeManager.EvaluateTrade의 결과를 담는 클래스.
+/// </summary>
+public class TradeEvaluationResult
+{
+    public bool IsAccepted { get; set; }
+    public long RequiredCash { get; set; }
+    public float ValueDifference { get; set; } // 제안팀 입장에서의 가치 차이. 양수일수록 이득.
+}
