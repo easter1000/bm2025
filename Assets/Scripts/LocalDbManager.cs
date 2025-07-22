@@ -196,7 +196,7 @@ public class LocalDbManager : MonoBehaviour
                 Losses = 0, 
                 SalaryCap = currentSeasonSalaryCap, 
                 CurrentTeamSalary = teamSalaryPair.Value, 
-                TeamBudget = 180000000 
+                TeamBudget = 200000000 
             });
         }
         _db.InsertAll(teamFinances);

@@ -5,6 +5,7 @@ using System.Collections.Generic;
 using System.Linq;
 using TMPro;
 using System.Globalization;
+using System.Collections; // Added for IEnumerator
 
 public class ScheduleView : MonoBehaviour
 {
@@ -12,6 +13,7 @@ public class ScheduleView : MonoBehaviour
     [SerializeField] private Transform contentParent;
     [SerializeField] private ScheduleCell scheduleCellPrefab;
     [SerializeField] private TMP_Text dateLabel;
+    [SerializeField] private ScrollRect scrollRect; // 스크롤뷰의 ScrollRect 컴포넌트
     
     [Header("Actions")]
     [SerializeField] private Button startGameButton;
@@ -110,6 +112,27 @@ public class ScheduleView : MonoBehaviour
         if (startGameButton != null)
         {
             startGameButton.gameObject.SetActive(_userGameOnSelectedDate != null);
+        }
+
+        StartCoroutine(RebuildLayoutAndResetScroll());
+    }
+
+    /// <summary>
+    /// 레이아웃을 갱신하고 스크롤 위치를 최상단으로 리셋합니다.
+    /// </summary>
+    private IEnumerator RebuildLayoutAndResetScroll()
+    {
+        // 다음 프레임까지 기다려 UI 요소들이 생성될 시간을 줍니다.
+        yield return new WaitForEndOfFrame();
+
+        if (contentParent != null)
+        {
+            LayoutRebuilder.ForceRebuildLayoutImmediate(contentParent as RectTransform);
+        }
+        
+        if (scrollRect != null)
+        {
+            scrollRect.verticalNormalizedPosition = 1f; // 1 = 맨 위
         }
     }
 

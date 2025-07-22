@@ -20,6 +20,9 @@ EditorBuildSettings:
   - enabled: 1
     path: Assets/Scenes/TradeScene.unity
     guid: fa58b11602a611b478e37f2f1c927d73
+  - enabled: 1
+    path: Assets/Scenes/gamelogic_test.unity
+    guid: d19ffe41c8a423a49a49374ca6672a4c
   m_configObjects:
     com.unity.input.settings.actions: {fileID: -944628639613478452, guid: 2bcd2660ca9b64942af0de543d8d7100, type: 3}
   m_UseUCBPForAssetBundles: 0

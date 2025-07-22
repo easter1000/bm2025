@@ -14,7 +14,7 @@ public class GameSimulator : MonoBehaviour
 
     [Header("Stamina & Substitution Settings")]
     public float staminaSubOutThreshold = 40f;
-    public float staminaSubInThreshold = 85f;
+    public float staminaSubInThreshold = 75f;
     public float staminaDepletionRate = 0.2f;
     public float staminaRecoveryRate = 0.4f;
     public float substitutionCheckInterval = 5.0f;
@@ -22,9 +22,109 @@ public class GameSimulator : MonoBehaviour
     [Header("Game State")]
     public GameState CurrentState { get; private set; }
     
-    public static event Action<GameState> OnGameStateUpdated;
-    public static event Action<GamePlayer, GamePlayer> OnPlayerSubstituted;
+    public static event Action<GameSimulator.GameState> OnGameStateUpdated;
+    public static event Action<GameSimulator.GamePlayer, GameSimulator.GamePlayer> OnPlayerSubstituted;
+    
+    #region Inner Classes (Data Structures)
+    public class GamePlayer
+    {
+        public PlayerRating Rating;
+        public PlayerStats Stats;
+        public float CurrentStamina;
+        public bool IsOnCourt;
+        public int TeamId; // 0 for home, 1 for away
+        public float SecondsOnCourt; // 초 단위 출전 시간 추적
 
+        public class PlayerStats
+        {
+            public int Points;
+            public int Assists;
+            public int OffensiveRebounds;
+            public int DefensiveRebounds;
+            public int Steals;
+            public int Blocks;
+            public int Turnovers;
+            public int Fouls;
+            public int FieldGoalsMade;
+            public int FieldGoalsAttempted;
+            public int ThreePointersMade;
+            public int ThreePointersAttempted;
+            public int FreeThrowsMade;
+            public int FreeThrowsAttempted;
+            public int PlusMinus;
+        }
+
+        public GamePlayer(PlayerRating rating, int teamId)
+        {
+            Rating = rating;
+            Stats = new PlayerStats();
+            CurrentStamina = 100f;
+            IsOnCourt = false;
+            TeamId = teamId;
+            SecondsOnCourt = 0f;
+        }
+
+        public PlayerStat ExportToPlayerStat(int playerId, int season, string gameId)
+        {
+            return new PlayerStat
+            {
+                PlayerId = playerId,
+                PlayerName = this.Rating.name,
+                TeamAbbr = this.Rating.team,
+                Season = season,
+                GameId = gameId,
+                SecondsPlayed = (int)this.SecondsOnCourt,
+                Points = this.Stats.Points,
+                Assists = this.Stats.Assists,
+                Rebounds = this.Stats.OffensiveRebounds + this.Stats.DefensiveRebounds,
+                Steals = this.Stats.Steals,
+                Blocks = this.Stats.Blocks,
+                Turnovers = this.Stats.Turnovers,
+                FieldGoalsMade = this.Stats.FieldGoalsMade,
+                FieldGoalsAttempted = this.Stats.FieldGoalsAttempted,
+                ThreePointersMade = this.Stats.ThreePointersMade,
+                ThreePointersAttempted = this.Stats.ThreePointersAttempted,
+                FreeThrowsMade = this.Stats.FreeThrowsMade,
+                FreeThrowsAttempted = this.Stats.FreeThrowsAttempted,
+                PlusMinus = this.Stats.PlusMinus,
+                RecordedAt = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss")
+            };
+        }
+    }
+
+    public class GameState
+    {
+        public string GameId;
+        public int Season;
+        public string HomeTeamName;
+        public string AwayTeamName;
+        public int HomeScore;
+        public int AwayScore;
+        public int Quarter = 1;
+        public float GameClockSeconds = 720f; // 12 minutes
+        public float ShotClockSeconds = 24f;
+        public int PossessingTeamId = 0; // 0 for home, 1 for away
+        public GamePlayer LastPasser; // For assist tracking
+    }
+    
+    public class GameLogEntry
+    {
+        public string TimeStamp;
+        public string Description;
+        public int HomeScore;
+        public int AwayScore;
+
+        public override string ToString() => $"[{TimeStamp}] {Description} (Score: {HomeScore}-{AwayScore})";
+    }
+
+    public class GameResult
+    {
+        public int HomeScore;
+        public int AwayScore;
+        public List<PlayerStat> PlayerStats;
+    }
+    #endregion
+    
     private List<GamePlayer> _homeTeamRoster;
     private List<GamePlayer> _awayTeamRoster;
     
@@ -69,7 +169,14 @@ public class GameSimulator : MonoBehaviour
         _timeUntilNextPossession -= gameTimeDelta;
         _timeUntilNextSubCheck -= Time.deltaTime;
 
+        // 공격 시간(Shot Clock) 업데이트
+        if (CurrentState.ShotClockSeconds > 0)
+        {
+            CurrentState.ShotClockSeconds -= gameTimeDelta;
+        }
+
         UpdateAllPlayerStamina(gameTimeDelta);
+        UpdatePlayerTime(gameTimeDelta);
 
         if (_timeUntilNextPossession <= 0)
         {
@@ -79,7 +186,8 @@ public class GameSimulator : MonoBehaviour
                 CurrentState.LastPasser = null; 
                 _rootOffenseNode.Evaluate(this, ballHandler);
             }
-            _timeUntilNextPossession = UnityEngine.Random.Range(10f, 20f); 
+            // 공격 속도 조절: 다음 공격까지의 시간을 10-20초에서 12-24초로 늘려 템포를 늦춤
+            _timeUntilNextPossession = UnityEngine.Random.Range(12f, 24f); 
         }
 
         if (_timeUntilNextSubCheck <= 0)
@@ -170,19 +278,63 @@ public class GameSimulator : MonoBehaviour
         }
     }
     
+    public void RecordAssist(GamePlayer passer)
+    {
+        if (passer != null)
+        {
+            passer.Stats.Assists++;
+            AddLog($"{passer.Rating.name} gets the assist.");
+        }
+    }
+
+    public void UpdatePlusMinusOnScore(int scoringTeamId, int points)
+    {
+        foreach (var player in GetAllPlayersOnCourt())
+        {
+            if (player.TeamId == scoringTeamId)
+            {
+                player.Stats.PlusMinus += points;
+            }
+            else
+            {
+                player.Stats.PlusMinus -= points;
+            }
+        }
+    }
+
     private void BuildOffenseBehaviorTree()
     {
         _rootOffenseNode = new Selector(new List<Node> {
-            new Sequence(new List<Node> { new Condition_IsGoodPassOpportunity(), new Action_PassToBestTeammate() }),
-            new Sequence(new List<Node> { new Condition_IsOpenFor3(), new Action_Try3PointShot() }),
-            new Sequence(new List<Node> { new Condition_CanDrive(), new Action_DriveAndFinish() }),
-            new Sequence(new List<Node> { new Condition_IsGoodForMidRange(), new Action_TryMidRangeShot() }),
-            new Action_PassToBestTeammate() 
+            // 최우선 순위: 공격 시간이 5초 미만으로 쫓기는 상황
+            new Sequence(new List<Node> {
+                new Condition_IsShotClockLow(),
+                new Selector(new List<Node> { // 성공률 낮은 버전의 슛 노드들 사용
+                    new Sequence(new List<Node> { new Condition_IsOpenFor3(), new Action_TryForced3PointShot() }),
+                    new Sequence(new List<Node> { new Condition_CanDrive(), new Action_TryForcedDrive() }),
+                    new Sequence(new List<Node> { new Condition_IsGoodForMidRange(), new Action_TryForcedMidRangeShot() }),
+                    new Action_TryForced3PointShot() // 최후의 수단으로 그냥 3점 시도
+                })
+            }),
+
+            // 일반적인 공격 상황 (공격 시간 넉넉함)
+            new Selector(new List<Node> {
+                // 패스를 1~2회 시도하여 더 좋은 기회를 모색
+                new Sequence(new List<Node> { new Condition_IsGoodPassOpportunity(), new Action_PassToBestTeammate() }),
+                new Sequence(new List<Node> { new Condition_IsGoodPassOpportunity(), new Action_PassToBestTeammate() }),
+                
+                // 다양한 공격 옵션 중 하나를 선택 (Selector 활용)
+                new Selector(new List<Node> {
+                    new Sequence(new List<Node> { new Condition_IsOpenFor3(), new Action_Try3PointShot() }),
+                    new Sequence(new List<Node> { new Condition_CanDrive(), new Action_DriveAndFinish() }),
+                    new Sequence(new List<Node> { new Condition_IsGoodForMidRange(), new Action_TryMidRangeShot() })
+                }),
+
+                // 위에서 아무것도 선택되지 않았다면, 마지막으로 패스 시도
+                new Action_PassToBestTeammate()
+            })
         });
     }
     
-    // (이하 Stamina, Substitution, Helper, Printing 함수들은 이전과 동일)
-
     public void ConsumeTime(float seconds) => _timeUntilNextPossession = seconds;
     #endregion
 
@@ -202,6 +354,18 @@ public class GameSimulator : MonoBehaviour
             {
                 player.CurrentStamina += staminaRecoveryRate * gameTimeDelta;
                 player.CurrentStamina = Mathf.Min(100, player.CurrentStamina);
+            }
+        }
+    }
+
+    private void UpdatePlayerTime(float gameTimeDelta)
+    {
+        var allRosterPlayers = _homeTeamRoster.Concat(_awayTeamRoster);
+        foreach (var player in allRosterPlayers)
+        {
+            if (player.IsOnCourt)
+            {
+                player.SecondsOnCourt += gameTimeDelta;
             }
         }
     }
@@ -231,7 +395,7 @@ public class GameSimulator : MonoBehaviour
             if (bestAvailableSub != null)
             {
                 PerformSubstitution(playerOut, bestAvailableSub);
-                break;
+                // break; // 한 번에 한 명만 교체하던 제한을 제거하여, 지친 선수가 여러 명이면 모두 교체하도록 수정
             }
         }
     }
@@ -359,7 +523,7 @@ public class GameSimulator : MonoBehaviour
         {
             rebounder.Stats.OffensiveRebounds++;
             AddLog($"{rebounder.Rating.name} grabs the offensive rebound!");
-            CurrentState.ShotClockSeconds = 14f;
+            CurrentState.ShotClockSeconds = 14f; // 공격 리바운드 시 14초로 리셋
             CurrentState.PossessingTeamId = rebounder.TeamId;
         }
         else
@@ -367,7 +531,7 @@ public class GameSimulator : MonoBehaviour
             rebounder.Stats.DefensiveRebounds++;
             AddLog($"{rebounder.Rating.name} grabs the defensive rebound.");
             CurrentState.PossessingTeamId = rebounder.TeamId;
-            CurrentState.ShotClockSeconds = 24f;
+            CurrentState.ShotClockSeconds = 24f; // 수비 리바운드 시 24초로 리셋
             CurrentState.LastPasser = null;
         }
     }

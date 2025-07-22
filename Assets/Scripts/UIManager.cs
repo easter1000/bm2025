@@ -62,7 +62,7 @@ public class UIManager : MonoBehaviour
         GameSimulator.OnPlayerSubstituted -= UpdatePlayerPuck;
     }
     
-    public void InitializePlayerPucks(List<GamePlayer> homeRoster, List<GamePlayer> awayRoster)
+    public void InitializePlayerPucks(List<GameSimulator.GamePlayer> homeRoster, List<GameSimulator.GamePlayer> awayRoster)
     {
         foreach (var puck in _playerPucks.Values)
         {
@@ -99,7 +99,7 @@ public class UIManager : MonoBehaviour
         awayTeamNameText.text = awayName;
     }
     
-    private void UpdateScoreboard(GameState state)
+    private void UpdateScoreboard(GameSimulator.GameState state)
     {
         homeScoreText.text = state.HomeScore.ToString();
         awayScoreText.text = state.AwayScore.ToString();
@@ -109,7 +109,7 @@ public class UIManager : MonoBehaviour
         gameClockText.text = $"{(int)clock / 60:00}:{(int)clock % 60:00}";
     }
     
-    private void UpdatePlayerPuck(GamePlayer playerOut, GamePlayer playerIn)
+    private void UpdatePlayerPuck(GameSimulator.GamePlayer playerOut, GameSimulator.GamePlayer playerIn)
     {
         if (_playerPucks.ContainsKey(playerOut.Rating.player_id))
         {
@@ -122,7 +122,7 @@ public class UIManager : MonoBehaviour
     }
 
     // [핵심 업데이트] 선수 원 클릭 시 호출될 함수의 내용을 구체적으로 구현
-    public void ShowPlayerStats(GamePlayer player)
+    public void ShowPlayerStats(GameSimulator.GamePlayer player)
     {
         if (playerStatPanel == null)
         {
