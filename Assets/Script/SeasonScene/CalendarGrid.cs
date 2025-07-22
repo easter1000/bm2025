@@ -256,23 +256,60 @@ public class CalendarGrid : MonoBehaviour
 
         if (myGameToday != null)
         {
-            // 경기가 있으면: GameDataHolder에 정보 저장하고 씬 이동
+            // 내 경기가 있으면: GameDataHolder에 정보 저장하고 씬 이동
             GameDataHolder.CurrentGameInfo = myGameToday;
-            Debug.Log($"오늘의 경기({myGameToday.GameId})를 시작합니다. gamelogic_test 씬으로 이동합니다.");
+            Debug.Log($"[CalendarGrid] User game ({myGameToday.GameId}) found. Loading game scene.");
             UnityEngine.SceneManagement.SceneManager.LoadScene("gamelogic_test");
         }
         else
         {
-            // 경기가 없으면: 날짜를 하루 진행하고 달력을 새로고침
-            Debug.Log("오늘은 경기가 없습니다. 날짜를 하루 진행합니다.");
-            LocalDbManager.Instance.AdvanceUserDate();
-            PopulateCalendar(); // 달력 UI 새로고침
+            // 내 경기가 없으면: 오늘 있는 다른 모든 AI 경기를 백그라운드에서 실행
+            Debug.Log($"[CalendarGrid] No user game today. Simulating all AI games for {today:yyyy-MM-dd}.");
+            var aiGames = gamesToday?.Where(g => g.GameStatus == "Scheduled").ToList();
 
-            // 버튼 다시 숨기기
+            if (aiGames != null && aiGames.Count > 0)
+            {
+                BackgroundGameSimulator simulator = new BackgroundGameSimulator();
+                foreach (var game in aiGames)
+                {
+                    Debug.Log($" - Simulating: {game.AwayTeamAbbr} at {game.HomeTeamAbbr}");
+                    var result = simulator.SimulateFullGame(game);
+                    SaveGameResult(game, result);
+                }
+            }
+            else
+            {
+                Debug.Log("[CalendarGrid] No AI games to simulate today.");
+            }
+
+            // 모든 AI 경기 처리 후: 날짜를 하루 진행하고, 트레이드 시도 후, UI 새로고침
+            LocalDbManager.Instance.AdvanceUserDate();
+            SeasonManager.Instance.AttemptAiToAiTrades();
+            
+            // UI 업데이트
+            PopulateCalendar(); 
+            if (scheduleView != null)
+            {
+                // 다음 날의 스케줄을 보여주도록 업데이트
+                scheduleView.ShowScheduleForDate(today.AddDays(1));
+            }
+            
             if (advanceDayButton != null)
             {
                 advanceDayButton.gameObject.SetActive(false);
             }
         }
+    }
+
+    /// <summary>
+    /// 경기 결과를 DB에 저장하는 헬퍼 메서드
+    /// </summary>
+    private void SaveGameResult(Schedule game, GameResult result)
+    {
+        var db = LocalDbManager.Instance;
+        db.InsertPlayerStats(result.PlayerStats);
+        db.UpdateGameResult(game.GameId, result.HomeScore, result.AwayScore);
+        db.UpdateTeamWinLossRecord(game.HomeTeamAbbr, result.HomeScore > result.AwayScore, game.Season);
+        db.UpdateTeamWinLossRecord(game.AwayTeamAbbr, result.AwayScore > result.HomeScore, game.Season);
     }
 }

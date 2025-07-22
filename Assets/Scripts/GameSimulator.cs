@@ -5,9 +5,11 @@ using System.Linq;
 using System.Text;
 using System;
 
-public class GameSimulator : MonoBehaviour
+// IGameSimulator 인터페이스 구현
+public class GameSimulator : MonoBehaviour, IGameSimulator
 {
-    public static event Action<GameResult> OnGameFinished;
+    // GameResult는 이제 GamaData.cs의 공용 타입을 사용합니다.
+    public static event Action<GameResult> OnGameFinished; 
 
     [Header("Simulation Settings")]
     public float simulationSpeed = 8.0f;
@@ -20,116 +22,18 @@ public class GameSimulator : MonoBehaviour
     public float substitutionCheckInterval = 5.0f;
 
     [Header("Game State")]
-    public GameState CurrentState { get; private set; }
+    public GameState CurrentState { get; private set; } // GamaData.cs의 GameState 사용
     
-    public static event Action<GameSimulator.GameState> OnGameStateUpdated;
-    public static event Action<GameSimulator.GamePlayer, GameSimulator.GamePlayer> OnPlayerSubstituted;
+    // GamePlayer, GameState는 GamaData.cs의 것을 사용하므로 이벤트 타입 변경
+    public static event Action<GameState> OnGameStateUpdated;
+    public static event Action<GamePlayer, GamePlayer> OnPlayerSubstituted;
     
-    #region Inner Classes (Data Structures)
-    public class GamePlayer
-    {
-        public PlayerRating Rating;
-        public PlayerStats Stats;
-        public float CurrentStamina;
-        public bool IsOnCourt;
-        public int TeamId; // 0 for home, 1 for away
-        public float SecondsOnCourt; // 초 단위 출전 시간 추적
+    // 내부 클래스 (GamePlayer, GameState, GameLogEntry, GameResult 등) 모두 삭제
 
-        public class PlayerStats
-        {
-            public int Points;
-            public int Assists;
-            public int OffensiveRebounds;
-            public int DefensiveRebounds;
-            public int Steals;
-            public int Blocks;
-            public int Turnovers;
-            public int Fouls;
-            public int FieldGoalsMade;
-            public int FieldGoalsAttempted;
-            public int ThreePointersMade;
-            public int ThreePointersAttempted;
-            public int FreeThrowsMade;
-            public int FreeThrowsAttempted;
-            public int PlusMinus;
-        }
-
-        public GamePlayer(PlayerRating rating, int teamId)
-        {
-            Rating = rating;
-            Stats = new PlayerStats();
-            CurrentStamina = 100f;
-            IsOnCourt = false;
-            TeamId = teamId;
-            SecondsOnCourt = 0f;
-        }
-
-        public PlayerStat ExportToPlayerStat(int playerId, int season, string gameId)
-        {
-            return new PlayerStat
-            {
-                PlayerId = playerId,
-                PlayerName = this.Rating.name,
-                TeamAbbr = this.Rating.team,
-                Season = season,
-                GameId = gameId,
-                SecondsPlayed = (int)this.SecondsOnCourt,
-                Points = this.Stats.Points,
-                Assists = this.Stats.Assists,
-                Rebounds = this.Stats.OffensiveRebounds + this.Stats.DefensiveRebounds,
-                Steals = this.Stats.Steals,
-                Blocks = this.Stats.Blocks,
-                Turnovers = this.Stats.Turnovers,
-                FieldGoalsMade = this.Stats.FieldGoalsMade,
-                FieldGoalsAttempted = this.Stats.FieldGoalsAttempted,
-                ThreePointersMade = this.Stats.ThreePointersMade,
-                ThreePointersAttempted = this.Stats.ThreePointersAttempted,
-                FreeThrowsMade = this.Stats.FreeThrowsMade,
-                FreeThrowsAttempted = this.Stats.FreeThrowsAttempted,
-                PlusMinus = this.Stats.PlusMinus,
-                RecordedAt = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss")
-            };
-        }
-    }
-
-    public class GameState
-    {
-        public string GameId;
-        public int Season;
-        public string HomeTeamName;
-        public string AwayTeamName;
-        public int HomeScore;
-        public int AwayScore;
-        public int Quarter = 1;
-        public float GameClockSeconds = 720f; // 12 minutes
-        public float ShotClockSeconds = 24f;
-        public int PossessingTeamId = 0; // 0 for home, 1 for away
-        public GamePlayer LastPasser; // For assist tracking
-        public GamePlayer CurrentBallHandler; // [신규] 현재 공을 가진 선수
-    }
+    private List<GamePlayer> _homeTeamRoster; // GamaData.cs의 GamePlayer 사용
+    private List<GamePlayer> _awayTeamRoster; // GamaData.cs의 GamePlayer 사용
     
-    public class GameLogEntry
-    {
-        public string TimeStamp;
-        public string Description;
-        public int HomeScore;
-        public int AwayScore;
-
-        public override string ToString() => $"[{TimeStamp}] {Description} (Score: {HomeScore}-{AwayScore})";
-    }
-
-    public class GameResult
-    {
-        public int HomeScore;
-        public int AwayScore;
-        public List<PlayerStat> PlayerStats;
-    }
-    #endregion
-    
-    private List<GamePlayer> _homeTeamRoster;
-    private List<GamePlayer> _awayTeamRoster;
-    
-    private List<GameLogEntry> _gameLog = new List<GameLogEntry>();
+    private List<GameLogEntry> _gameLog = new List<GameLogEntry>(); // GamaData.cs의 GameLogEntry 사용
     private Node _rootOffenseNode;
     private enum SimStatus { Initializing, Running, Finished }
     private SimStatus _status = SimStatus.Initializing;
@@ -179,20 +83,19 @@ public class GameSimulator : MonoBehaviour
         UpdateAllPlayerStamina(gameTimeDelta);
         UpdatePlayerTime(gameTimeDelta);
 
-        // _timeUntilNextPossession은 각 행동 노드에서 설정됨
         if (_timeUntilNextPossession <= 0)
         {
-            // 공을 가진 선수가 없으면 (새 공격 시작), 공격팀에서 한 명을 정함
-            if (CurrentState.CurrentBallHandler == null)
+            if (CurrentState.LastPasser == null) // LastPasser로 현재 볼 핸들러를 추적하지 않고, 새 공격 시작 시에만 초기화
             {
-                CurrentState.CurrentBallHandler = GetRandomAttacker();
-                CurrentState.LastPasser = null; // 새 공격이므로 어시스트 기록 초기화
+                CurrentState.LastPasser = GetRandomAttacker(); 
             }
+            
+            var ballHandler = CurrentState.LastPasser;
 
-            // 공을 가진 선수가 있으면 행동 개시
-            if(CurrentState.CurrentBallHandler != null) 
+            if(ballHandler != null) 
             {
-                _rootOffenseNode.Evaluate(this, CurrentState.CurrentBallHandler);
+                // ActionNode의 Evaluate는 GamePlayer를 받음. LastPasser가 GamePlayer 타입
+                _rootOffenseNode.Evaluate(this, ballHandler);
             }
         }
 
@@ -231,7 +134,7 @@ public class GameSimulator : MonoBehaviour
             else
             {
                 CurrentState.GameClockSeconds = 720f;
-                CurrentState.ShotClockSeconds = 24f; // 새 쿼터 시작 시 샷클락 리셋
+                CurrentState.ShotClockSeconds = 24f;
                 AddLog($"--- Start of Quarter {CurrentState.Quarter} ---");
             }
         }
@@ -242,7 +145,7 @@ public class GameSimulator : MonoBehaviour
     #region Initialization & Core Logic
     private void SetupGame(Schedule gameInfo)
     {
-        CurrentState = new GameState();
+        CurrentState = new GameState(); // GamaData.cs의 GameState 사용
         var homeTeamInfo = LocalDbManager.Instance.GetTeam(gameInfo.HomeTeamAbbr);
         var awayTeamInfo = LocalDbManager.Instance.GetTeam(gameInfo.AwayTeamAbbr);
         CurrentState.HomeTeamName = homeTeamInfo.team_name;
@@ -312,8 +215,6 @@ public class GameSimulator : MonoBehaviour
     private void BuildOffenseBehaviorTree()
     {
         _rootOffenseNode = new Selector(new List<Node> {
-            // 최우선 순위: 공격 시간이 5초 미만으로 쫓기는 상황
-            // (이전 로직과 동일)
             new Sequence(new List<Node> {
                 new Condition_IsShotClockLow(),
                 new Selector(new List<Node> { 
@@ -323,23 +224,14 @@ public class GameSimulator : MonoBehaviour
                     new Action_TryForced3PointShot()
                 })
             }),
-
-            // 일반적인 공격 상황: 공격성을 높이고 패스와 슛의 균형을 맞춘 새로운 구조
             new Selector(new List<Node> {
-                // 1. 아주 좋은 패스 기회가 있으면 먼저 고려
                 new Sequence(new List<Node> { new Condition_IsGoodPassOpportunity(), new Action_PassToBestTeammate() }),
-                
-                // 2. 슛 기회를 먼저 탐색
                 new Selector(new List<Node> {
                     new Sequence(new List<Node> { new Condition_IsOpenFor3(), new Action_Try3PointShot() }),
                     new Sequence(new List<Node> { new Condition_CanDrive(), new Action_DriveAndFinish() }),
                     new Sequence(new List<Node> { new Condition_IsGoodForMidRange(), new Action_TryMidRangeShot() })
                 }),
-
-                // 3. 슛 기회가 마땅치 않으면 다시 패스 시도
                 new Sequence(new List<Node> { new Condition_IsGoodPassOpportunity(), new Action_PassToBestTeammate() }),
-
-                // 4. 그래도 할 게 없으면 억지로라도 패스
                 new Action_PassToBestTeammate()
             })
         });
@@ -375,7 +267,8 @@ public class GameSimulator : MonoBehaviour
         {
             if (player.IsOnCourt)
             {
-                player.SecondsOnCourt += gameTimeDelta;
+                // LivePlayerStats에 출전 시간 기록
+                player.Stats.MinutesPlayedInSeconds += (int)gameTimeDelta;
             }
         }
     }
@@ -405,7 +298,6 @@ public class GameSimulator : MonoBehaviour
             if (bestAvailableSub != null)
             {
                 PerformSubstitution(playerOut, bestAvailableSub);
-                // break; // 한 번에 한 명만 교체하던 제한을 제거하여, 지친 선수가 여러 명이면 모두 교체하도록 수정
             }
         }
     }
@@ -464,7 +356,6 @@ public class GameSimulator : MonoBehaviour
         var onCourtAttackers = GetPlayersOnCourt(CurrentState.PossessingTeamId);
         if (onCourtAttackers.Count == 0) return null;
 
-        // 에이스에게 공이 갈 확률을 높이기 위해 OVR에 제곱 가중치 적용
         float totalWeight = onCourtAttackers.Sum(p => Mathf.Pow(p.Rating.overallAttribute, 2.5f));
         float randomPoint = UnityEngine.Random.Range(0, totalWeight);
 
@@ -515,7 +406,7 @@ public class GameSimulator : MonoBehaviour
     {
         ConsumeTime(UnityEngine.Random.Range(2, 5));
         var allPlayers = GetAllPlayersOnCourt();
-        var reboundScores = new Dictionary<GameSimulator.GamePlayer, float>();
+        var reboundScores = new Dictionary<GamePlayer, float>();
         float totalScore = 0;
 
         foreach (var p in allPlayers)
@@ -528,7 +419,7 @@ public class GameSimulator : MonoBehaviour
         }
 
         float randomPoint = UnityEngine.Random.Range(0, totalScore);
-        GameSimulator.GamePlayer rebounder = reboundScores.FirstOrDefault(p => { randomPoint -= p.Value; return randomPoint < 0; }).Key;
+        GamePlayer rebounder = reboundScores.FirstOrDefault(p => { randomPoint -= p.Value; return randomPoint < 0; }).Key;
         if (rebounder == null) rebounder = allPlayers.FirstOrDefault();
 
         if (rebounder.TeamId == shooter.TeamId)
@@ -537,8 +428,7 @@ public class GameSimulator : MonoBehaviour
             AddLog($"{rebounder.Rating.name} grabs the offensive rebound!");
             CurrentState.ShotClockSeconds = 14f;
             CurrentState.PossessingTeamId = rebounder.TeamId;
-            CurrentState.CurrentBallHandler = rebounder; // 공 잡은 선수 설정
-            CurrentState.LastPasser = null; // 리바운드는 어시스트 기회를 무효화
+            CurrentState.LastPasser = rebounder; // 공 잡은 선수 설정
         }
         else
         {
@@ -546,7 +436,6 @@ public class GameSimulator : MonoBehaviour
             AddLog($"{rebounder.Rating.name} grabs the defensive rebound.");
             CurrentState.PossessingTeamId = rebounder.TeamId;
             CurrentState.ShotClockSeconds = 24f;
-            CurrentState.CurrentBallHandler = rebounder; // 공 잡은 선수 설정
             CurrentState.LastPasser = null; // 공격권 전환, 어시스트 초기화
         }
     }
