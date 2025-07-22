@@ -6,7 +6,6 @@ using System.Collections.Generic;
 using System.Linq;
 using TMPro;
 using System.Globalization;
-using System.Collections; // Added for IEnumerator
 
 public class ScheduleView : MonoBehaviour
 {

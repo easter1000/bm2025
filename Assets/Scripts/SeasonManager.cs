@@ -3,6 +3,8 @@ using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
 using System;
+using UnityEngine.SceneManagement;
+using UnityEngine.EventSystems;
 
 public class SeasonManager : MonoBehaviour
 {
@@ -44,16 +46,30 @@ public class SeasonManager : MonoBehaviour
         }
         _instance = this;
         DontDestroyOnLoad(gameObject);
+
+        SceneManager.sceneLoaded += OnSceneLoaded;
+    }
+
+    void OnDestroy()
+    {
+        SceneManager.sceneLoaded -= OnSceneLoaded;
+    }
+
+    void OnSceneLoaded(Scene scene, LoadSceneMode mode)
+    {
+        if (FindObjectOfType<EventSystem>() == null)
+        {
+            Debug.Log("No EventSystem found in the scene, creating a new one.");
+            GameObject es = new GameObject("EventSystem");
+            es.AddComponent<EventSystem>();
+            es.AddComponent<StandaloneInputModule>();
+        }
     }
 
     void Start()
     {
         _dbManager = LocalDbManager.Instance;
         _tradeManager = FindAnyObjectByType<TradeManager>();
-        if (_tradeManager == null)
-        {
-            Debug.LogWarning("TradeManager를 찾을 수 없습니다. 트레이드 관련 기능이 비활성화됩니다.");
-        }
     }
 
     public void InitializeNewSeason(int season, string userTeamAbbr)
