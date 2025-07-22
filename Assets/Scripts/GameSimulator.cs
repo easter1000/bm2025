@@ -28,7 +28,10 @@ public class GameSimulator : MonoBehaviour, IGameSimulator
     public static event Action<GameState> OnGameStateUpdated;
     public static event Action<GamePlayer, GamePlayer> OnPlayerSubstituted;
     public static event Action<string> OnUILogGenerated; // UI 표시용 로그 이벤트
-    
+
+    public bool IsUserTeamAutoSubbed { get; set; } = false; // [추가] 유저팀 자동 교체 여부
+    private int _userTeamId = -1; // [추가] 0=홈, 1=어웨이, -1=AI vs AI
+
     private List<GamePlayer> _homeTeamRoster; // GamaData.cs의 GamePlayer 사용
     private List<GamePlayer> _awayTeamRoster; // GamaData.cs의 GamePlayer 사용
     
@@ -38,6 +41,7 @@ public class GameSimulator : MonoBehaviour, IGameSimulator
     private SimStatus _status = SimStatus.Initializing;
     private float _timeUntilNextPossession = 0f;
     private float _timeUntilNextSubCheck = 0f;
+    private float _timeUntilNextInjuryCheck = 30f; // [추가] 다음 부상 체크까지 남은 게임 시간
 
     void Start()
     {
@@ -72,6 +76,7 @@ public class GameSimulator : MonoBehaviour, IGameSimulator
         CurrentState.GameClockSeconds -= gameTimeDelta;
         _timeUntilNextPossession -= gameTimeDelta;
         _timeUntilNextSubCheck -= Time.deltaTime;
+        _timeUntilNextInjuryCheck -= gameTimeDelta; // [추가]
 
         // 공격 시간(Shot Clock) 업데이트
         if (CurrentState.ShotClockSeconds > 0)
@@ -98,6 +103,12 @@ public class GameSimulator : MonoBehaviour, IGameSimulator
             }
         }
 
+        if (_timeUntilNextInjuryCheck <= 0)
+        {
+            CheckForInjuries();
+            _timeUntilNextInjuryCheck = 60f; // 다음 체크는 1분(게임 시간) 뒤
+        }
+
         if (_timeUntilNextSubCheck <= 0)
         {
             CheckForSubstitutions();
@@ -116,7 +127,16 @@ public class GameSimulator : MonoBehaviour, IGameSimulator
                 PrintFinalLogs();
                 PrintFinalBoxScore();
 
-                var finalPlayerStats = _homeTeamRoster.Concat(_awayTeamRoster)
+                // [수정] 경기 종료 후 스태미나/부상 상태 DB에 저장
+                var allPlayers = _homeTeamRoster.Concat(_awayTeamRoster).ToList();
+                foreach (var p in allPlayers)
+                {
+                    int minutesPlayed = (int)(p.Stats.MinutesPlayedInSeconds / 60);
+                    // 부상당한 선수는 isEjected = true 상태
+                    LocalDbManager.Instance.UpdatePlayerAfterGame(p.Rating.player_id, minutesPlayed, p.IsEjected, GenerateInjuryDuration());
+                }
+
+                var finalPlayerStats = allPlayers
                     .Select(p => p.ExportToPlayerStat(p.Rating.player_id, CurrentState.Season, CurrentState.GameId))
                     .ToList();
                 
@@ -152,10 +172,40 @@ public class GameSimulator : MonoBehaviour, IGameSimulator
         CurrentState.Season = gameInfo.Season;
         CurrentState.GameId = gameInfo.GameId;
         
-        _homeTeamRoster = LocalDbManager.Instance.GetPlayersByTeam(gameInfo.HomeTeamAbbr).Select(p => new GamePlayer(p, 0)).ToList();
-        _awayTeamRoster = LocalDbManager.Instance.GetPlayersByTeam(gameInfo.AwayTeamAbbr).Select(p => new GamePlayer(p, 1)).ToList();
+        // [추가] 유저 팀 ID 확인
+        string userTeamAbbr = LocalDbManager.Instance.GetUser()?.SelectedTeamAbbr;
+        if (homeTeamInfo.team_abbv == userTeamAbbr) _userTeamId = 0;
+        else if (awayTeamInfo.team_abbv == userTeamAbbr) _userTeamId = 1;
 
-        if (_homeTeamRoster.Count < 5 || _awayTeamRoster.Count < 5)
+        _homeTeamRoster = LocalDbManager.Instance.GetPlayersByTeam(gameInfo.HomeTeamAbbr)
+            .Select(p => new GamePlayer(p, 0)).ToList();
+        _awayTeamRoster = LocalDbManager.Instance.GetPlayersByTeam(gameInfo.AwayTeamAbbr)
+            .Select(p => new GamePlayer(p, 1)).ToList();
+
+        // [추가] 경기 전 선수 스태미나 설정
+        foreach (var p in _homeTeamRoster.Concat(_awayTeamRoster))
+        {
+            var status = LocalDbManager.Instance.GetPlayerStatus(p.Rating.player_id);
+            if (status != null)
+            {
+                p.MaxStaminaForGame = status.Stamina; // [수정] 오늘의 최대 스태미나 설정
+                p.CurrentStamina = status.Stamina;
+                p.IsCurrentlyInjured = status.IsInjured; // [수정] 부상 상태 저장
+                if (status.IsInjured)
+                {
+                    // 부상 중인 선수는 경기는 뛰지만, 능력치가 감소됨 (퇴장시키지 않음)
+                    AddLog($"--- NOTICE: {p.Rating.name} is playing through an injury. ---");
+                }
+            }
+        }
+
+        // [추가] 선발 라인업을 정하기 전, 모든 선수의 초기 EffectiveOverall을 계산
+        foreach (var p in _homeTeamRoster.Concat(_awayTeamRoster))
+        {
+            RecalculateEffectiveOverall(p);
+        }
+
+        if (_homeTeamRoster.Count(p => !p.IsEjected) < 5 || _awayTeamRoster.Count(p => !p.IsEjected) < 5)
         {
             _status = SimStatus.Finished;
             return;
@@ -175,7 +225,10 @@ public class GameSimulator : MonoBehaviour, IGameSimulator
     private void SelectStarters(List<GamePlayer> roster)
     {
         roster.ForEach(p => p.IsOnCourt = false);
-        var sortedRoster = roster.OrderByDescending(p => p.Rating.overallAttribute).ToList();
+        var sortedRoster = roster
+            .Where(p => !p.IsEjected) // 퇴장/부상 당하지 않은 선수 중에서만 선택
+            .OrderByDescending(p => p.EffectiveOverall) // [수정] 기본 OVR 대신 실질 OVR로 선발
+            .ToList();
         var filledPositions = new HashSet<int>();
 
         foreach (var player in sortedRoster)
@@ -190,7 +243,7 @@ public class GameSimulator : MonoBehaviour, IGameSimulator
         
         if (roster.Count(p => p.IsOnCourt) < 5)
         {
-            roster.Where(p => !p.IsOnCourt).Take(5 - roster.Count(p => p.IsOnCourt)).ToList().ForEach(p => p.IsOnCourt = true);
+            roster.Where(p => !p.IsOnCourt && !p.IsEjected).Take(5 - roster.Count(p => p.IsOnCourt)).ToList().ForEach(p => p.IsOnCourt = true);
         }
     }
     
@@ -261,8 +314,11 @@ public class GameSimulator : MonoBehaviour, IGameSimulator
             else
             {
                 player.CurrentStamina += staminaRecoveryRate * gameTimeDelta;
-                player.CurrentStamina = Mathf.Min(100, player.CurrentStamina);
+                player.CurrentStamina = Mathf.Min(player.MaxStaminaForGame, player.CurrentStamina);
             }
+
+            // [추가] 스태미나 변경 후 모든 선수의 실질 OVR을 다시 계산
+            RecalculateEffectiveOverall(player);
         }
     }
 
@@ -281,31 +337,51 @@ public class GameSimulator : MonoBehaviour, IGameSimulator
 
     private void CheckForSubstitutions()
     {
-        ProcessTeamSubstitutions(_homeTeamRoster);
-        ProcessTeamSubstitutions(_awayTeamRoster);
+        // [수정] AI팀과, '자동 진행'이 켜진 유저팀에 대해서만 교체 로직 실행
+        if (_userTeamId != 0 || IsUserTeamAutoSubbed)
+        {
+            ProcessTeamSubstitutions(_homeTeamRoster);
+        }
+        if (_userTeamId != 1 || IsUserTeamAutoSubbed)
+        {
+            ProcessTeamSubstitutions(_awayTeamRoster);
+        }
     }
 
     private void ProcessTeamSubstitutions(List<GamePlayer> teamRoster)
     {
-        var tiredPlayers = teamRoster
-            .Where(p => p.IsOnCourt && p.CurrentStamina < staminaSubOutThreshold)
-            .OrderBy(p => p.CurrentStamina)
-            .ToList();
-
-        foreach (var playerOut in tiredPlayers)
+        bool substitutionMade;
+        do
         {
-            var bestAvailableSub = FindBestSubstitute(teamRoster, playerOut, true);
-            if (bestAvailableSub == null && playerOut.CurrentStamina < 15f)
-            {
-                AddLog($"--- EMERGENCY SUB for {playerOut.Rating.name} (Stamina: {(int)playerOut.CurrentStamina}) ---");
-                bestAvailableSub = FindBestSubstitute(teamRoster, playerOut, false);
-            }
+            substitutionMade = false;
 
-            if (bestAvailableSub != null)
+            // 코트 위의 선수 중 가장 교체가 시급한 선수 1명을 찾음 (가장 지쳤거나, 가장 비효율적인 선수)
+            var playerOut = teamRoster
+                .Where(p => p.IsOnCourt && !p.IsEjected)
+                .OrderBy(p => p.CurrentStamina) // 1순위: 가장 지친 선수
+                .FirstOrDefault(p => {
+                    var bestSub = FindBestSubstitute(teamRoster, p, false);
+                    // 조건: 스태미나가 임계치 미만이거나, 벤치 선수보다 실질 OVR이 5 이상 낮은 경우
+                    return p.CurrentStamina < staminaSubOutThreshold || 
+                           (bestSub != null && p.EffectiveOverall < bestSub.EffectiveOverall - 5);
+                });
+
+            if (playerOut != null)
             {
-                PerformSubstitution(playerOut, bestAvailableSub);
+                // 해당 선수를 위한 최적의 교체 선수를 찾음
+                var bestAvailableSub = FindBestSubstitute(teamRoster, playerOut, true);
+                if (bestAvailableSub == null && playerOut.CurrentStamina < 15f)
+                {
+                    bestAvailableSub = FindBestSubstitute(teamRoster, playerOut, false);
+                }
+
+                if (bestAvailableSub != null)
+                {
+                    PerformSubstitution(playerOut, bestAvailableSub);
+                    substitutionMade = true; // 교체가 이루어졌으므로, 팀 상태를 다시 처음부터 체크하기 위해 루프를 반복
+                }
             }
-        }
+        } while (substitutionMade); // 교체가 한 번이라도 발생했다면, 추가 교체가 필요한지 다시 검사
     }
 
     private GamePlayer FindBestSubstitute(List<GamePlayer> roster, GamePlayer playerOut, bool requireHighStamina)
@@ -317,7 +393,7 @@ public class GameSimulator : MonoBehaviour, IGameSimulator
         };
         var outgoingPosition = playerOut.Rating.position;
 
-        var candidates = roster.Where(p => !p.IsOnCourt);
+        var candidates = roster.Where(p => !p.IsOnCourt && !p.IsEjected); // [수정] 퇴장/부상 선수 제외
 
         if (requireHighStamina)
         {
@@ -334,7 +410,7 @@ public class GameSimulator : MonoBehaviour, IGameSimulator
         if (bestSub == null && !requireHighStamina) 
         {
             bestSub = roster
-                .Where(p => !p.IsOnCourt)
+                .Where(p => !p.IsOnCourt && !p.IsEjected) // [수정] 퇴장/부상 선수 제외
                 .OrderByDescending(p => p.CurrentStamina)
                 .FirstOrDefault();
         }
@@ -349,7 +425,86 @@ public class GameSimulator : MonoBehaviour, IGameSimulator
         
         AddLog($"{playerIn.Rating.name} (Stamina: {(int)playerIn.CurrentStamina}) subs in for {playerOut.Rating.name} (Stamina: {(int)playerOut.CurrentStamina})");
         OnPlayerSubstituted?.Invoke(playerOut, playerIn);
+        
+        string teamName = _homeTeamRoster.Any(p => p.Rating.player_id == playerIn.Rating.player_id) ? CurrentState.HomeTeamName : CurrentState.AwayTeamName;
+        AddLog($"--- {teamName} SUB: {playerIn.Rating.name} IN (Stamina: {(int)playerIn.CurrentStamina}), {playerOut.Rating.name} OUT (Stamina: {(int)playerOut.CurrentStamina}) ---");
+        AddUILog($"SUB: {playerIn.Rating.name} IN (Stamina:{(int)playerIn.CurrentStamina}), {playerOut.Rating.name} OUT (Stamina:{(int)playerOut.CurrentStamina})", playerIn);
     }
+    #endregion
+
+    #region New Foul Out & Injury Logic
+
+    private void EjectPlayer(GamePlayer player, string reason)
+    {
+        player.IsEjected = true;
+        player.IsOnCourt = false;
+
+        AddLog($"--- PLAYER EJECTED: {player.Rating.name} is out for the rest of the game due to {reason}. ---");
+        AddUILog($"EJECTED: {player.Rating.name} ({reason})", player);
+
+        var teamRoster = (player.TeamId == 0) ? _homeTeamRoster : _awayTeamRoster;
+        var substitute = FindBestSubstitute(teamRoster, player, false);
+        
+        if (substitute != null)
+        {
+            PerformSubstitution(player, substitute);
+        }
+        else
+        {
+            AddLog($"--- {player.Rating.name}'s team has no available substitutes! They must play shorthanded. ---");
+            // 5명 미만으로 플레이하는 로직은 복잡하므로 여기서는 로그만 남김
+        }
+    }
+
+    private void CheckForInjuries()
+    {
+        foreach (var player in GetAllPlayersOnCourt())
+        {
+            // [수정 a] 분당 체크이므로 /48 제거. injury_possibility = injury_rating * (100 - stamina) / 5
+            float injuryPossibility = player.Rating.injury * (100f - player.CurrentStamina) / 5f;
+
+            if (UnityEngine.Random.Range(0f, 100f) < injuryPossibility)
+            {
+                EjectPlayer(player, "Injury");
+                // 부상 발생 시, 해당 선수의 루프는 중단하고 다음 선수 체크
+                // (한 프레임에 여러명 부상 방지)
+                break; 
+            }
+        }
+    }
+
+    private int GenerateInjuryDuration()
+    {
+        float rand = UnityEngine.Random.Range(0f, 1f);
+        if (rand < 0.82f) // 1~7일 (82%)
+        {
+            return UnityEngine.Random.Range(1, 8);
+        }
+        else if (rand < 0.97f) // 8~30일 (15%)
+        {
+            return UnityEngine.Random.Range(8, 31);
+        }
+        else // 31~178일 (3%)
+        {
+            return UnityEngine.Random.Range(31, 179);
+        }
+    }
+
+    private void RecalculateEffectiveOverall(GamePlayer player)
+    {
+        var adjustedRating = GetAdjustedRating(player);
+        // 실질 OVR 계산: 주요 능력치들의 평균으로 간단히 계산 (세부 조정 가능)
+        int effectiveOvr = (
+            adjustedRating.closeShot + adjustedRating.midRangeShot + adjustedRating.threePointShot +
+            adjustedRating.drivingDunk + adjustedRating.layup + adjustedRating.freeThrow +
+            adjustedRating.interiorDefense + adjustedRating.perimeterDefense + adjustedRating.steal + adjustedRating.block +
+            adjustedRating.speed + adjustedRating.passIQ + adjustedRating.ballHandle +
+            adjustedRating.offensiveRebound + adjustedRating.defensiveRebound
+        ) / 15;
+
+        player.EffectiveOverall = effectiveOvr;
+    }
+
     #endregion
 
     #region Helper & Printing Functions
@@ -389,11 +544,19 @@ public class GameSimulator : MonoBehaviour, IGameSimulator
         Debug.Log(entry.ToString());
     }
 
-    public void AddUILog(string message)
+    public void AddUILog(string message, GamePlayer eventOwner)
     {
         float clock = Mathf.Max(0, CurrentState.GameClockSeconds);
         string timeStamp = $"Q{CurrentState.Quarter} {(int)clock / 60:00}:{(int)clock % 60:00}";
-        OnUILogGenerated?.Invoke($"{timeStamp} | {CurrentState.HomeScore} - {CurrentState.AwayScore} | {message}");
+
+        string teamAbbreviation = "";
+        if (eventOwner != null)
+        {
+            bool isHomePlayer = _homeTeamRoster.Any(p => p.Rating.player_id == eventOwner.Rating.player_id);
+            teamAbbreviation = isHomePlayer ? _homeTeamRoster.FirstOrDefault(p => p.Rating.player_id == eventOwner.Rating.player_id)?.Rating.team_abbv : _awayTeamRoster.FirstOrDefault(p => p.Rating.player_id == eventOwner.Rating.player_id)?.Rating.team_abbv;
+        }
+
+        OnUILogGenerated?.Invoke($"{timeStamp} | {teamAbbreviation} | {message}");
     }
 
     public GamePlayer GetRandomDefender(int attackingTeamId)
@@ -406,6 +569,11 @@ public class GameSimulator : MonoBehaviour, IGameSimulator
     public NodeState ResolveShootingFoul(GamePlayer shooter, GamePlayer defender, int freeThrows)
     {
         defender.Stats.Fouls++;
+        if (defender.Stats.Fouls >= 6)
+        {
+            EjectPlayer(defender, "6 Personal Fouls");
+        }
+        
         AddLog($"{defender.Rating.name} commits a shooting foul on {shooter.Rating.name}. ({defender.Stats.Fouls} PF)");
         
         shooter.Stats.FieldGoalsAttempted++;
@@ -448,6 +616,7 @@ public class GameSimulator : MonoBehaviour, IGameSimulator
         {
             rebounder.Stats.DefensiveRebounds++;
             AddLog($"{rebounder.Rating.name} grabs the defensive rebound.");
+            AddUILog($"{rebounder.Rating.name} grabs the defensive rebound.", rebounder);
             CurrentState.PossessingTeamId = rebounder.TeamId;
             CurrentState.ShotClockSeconds = 24f;
             CurrentState.LastPasser = null; // 공격권 전환, 어시스트 초기화
@@ -462,12 +631,13 @@ public class GameSimulator : MonoBehaviour, IGameSimulator
         {
             defensivePlayer.Stats.Steals++;
             AddLog($"{defensivePlayer.Rating.name} steals the ball from {offensivePlayer.Rating.name}!");
-            AddUILog($"{defensivePlayer.Rating.name} STEALS the ball from {offensivePlayer.Rating.name}");
+            AddUILog($"{defensivePlayer.Rating.name} STEALS the ball from {offensivePlayer.Rating.name}", defensivePlayer);
         }
         else
         {
+            offensivePlayer.Stats.Turnovers++;
             AddLog($"{offensivePlayer.Rating.name} commits a turnover.");
-            AddUILog($"{offensivePlayer.Rating.name} commits a turnover");
+            AddUILog($"{offensivePlayer.Rating.name} commits a turnover", offensivePlayer);
         }
         
         CurrentState.PossessingTeamId = 1 - offensivePlayer.TeamId;
@@ -480,39 +650,70 @@ public class GameSimulator : MonoBehaviour, IGameSimulator
     {
         blocker.Stats.Blocks++;
         AddLog($"{blocker.Rating.name} BLOCKS the shot from {shooter.Rating.name}!");
-        AddUILog($"{blocker.Rating.name} BLOCKS the shot by {shooter.Rating.name}");
+        AddUILog($"{blocker.Rating.name} BLOCKS the shot by {shooter.Rating.name}", blocker);
         ResolveRebound(shooter); // 블락된 공은 리바운드로 이어짐
     }
     
     public PlayerRating GetAdjustedRating(GamePlayer player)
     {
         if (player == null) return new PlayerRating();
-        float stamina = player.CurrentStamina;
-        if (stamina >= 70) return player.Rating;
         
-        float fatigueFactor = (70f - stamina) / 70f;
         var baseRating = player.Rating;
+        var adjustedRating = new PlayerRating();
+        
+        // --- [수정 b] 부상자 필터 로직 ---
+        if (player.IsCurrentlyInjured)
+        {
+            // 부상 시 능력치를 절반으로 감소 (필요한 모든 능력치 추가)
+            adjustedRating.closeShot = baseRating.closeShot / 2;
+            adjustedRating.midRangeShot = baseRating.midRangeShot / 2;
+            adjustedRating.threePointShot = baseRating.threePointShot / 2;
+            adjustedRating.freeThrow = baseRating.freeThrow / 2;
+            adjustedRating.layup = baseRating.layup / 2;
+            adjustedRating.drivingDunk = baseRating.drivingDunk / 2;
+            adjustedRating.drawFoul = baseRating.drawFoul / 2;
+            adjustedRating.interiorDefense = baseRating.interiorDefense / 2;
+            adjustedRating.perimeterDefense = baseRating.perimeterDefense / 2;
+            adjustedRating.steal = baseRating.steal / 2;
+            adjustedRating.block = baseRating.block / 2;
+            adjustedRating.speed = baseRating.speed / 2;
+            adjustedRating.stamina = baseRating.stamina / 2;
+            adjustedRating.passIQ = baseRating.passIQ / 2;
+            adjustedRating.ballHandle = baseRating.ballHandle / 2;
+            adjustedRating.offensiveRebound = baseRating.offensiveRebound / 2;
+            adjustedRating.defensiveRebound = baseRating.defensiveRebound / 2;
+        }
+        else
+        {
+            // 부상이 아닐 경우 기존 능력치 복사
+            adjustedRating = baseRating;
+        }
+
+        // --- 스태미나에 따른 능력치 감소 (기존 로직) ---
+        float stamina = player.CurrentStamina;
+        if (stamina >= 75f) return adjustedRating; // 스태미나 75 이상이면 패널티 없음
+        
+        float fatigueFactor = (75f - stamina) / 75f; // 기준 75로 수정
         float maxPenalty = 15.0f; 
         float penalty = fatigueFactor * maxPenalty;
 
-        return new PlayerRating {
-            player_id = baseRating.player_id, name = baseRating.name,
-            closeShot = (int)Mathf.Max(1, baseRating.closeShot - penalty),
-            midRangeShot = (int)Mathf.Max(1, baseRating.midRangeShot - penalty),
-            threePointShot = (int)Mathf.Max(1, baseRating.threePointShot - penalty),
-            layup = (int)Mathf.Max(1, baseRating.layup - penalty),
-            drivingDunk = (int)Mathf.Max(1, baseRating.drivingDunk - penalty),
-            speed = (int)Mathf.Max(1, baseRating.speed - penalty),
-            perimeterDefense = (int)Mathf.Max(1, baseRating.perimeterDefense - penalty),
-            interiorDefense = (int)Mathf.Max(1, baseRating.interiorDefense - penalty),
-            block = (int)Mathf.Max(1, baseRating.block - penalty),
-            steal = (int)Mathf.Max(1, baseRating.steal - penalty),
-            freeThrow = baseRating.freeThrow, passIQ = baseRating.passIQ,
-            drawFoul = (int)Mathf.Max(1, baseRating.drawFoul - (penalty * 0.5f)),
-            offensiveRebound = (int)Mathf.Max(1, baseRating.offensiveRebound - penalty),
-            defensiveRebound = (int)Mathf.Max(1, baseRating.defensiveRebound - penalty),
-            ballHandle = (int)Mathf.Max(1, baseRating.ballHandle - (penalty * 0.7f))
-        };
+        // 이미 복사된 adjustedRating에 페널티 적용
+        adjustedRating.closeShot = (int)Mathf.Max(1, adjustedRating.closeShot - penalty);
+        adjustedRating.midRangeShot = (int)Mathf.Max(1, adjustedRating.midRangeShot - penalty);
+        adjustedRating.threePointShot = (int)Mathf.Max(1, adjustedRating.threePointShot - penalty);
+        adjustedRating.layup = (int)Mathf.Max(1, adjustedRating.layup - penalty);
+        adjustedRating.drivingDunk = (int)Mathf.Max(1, adjustedRating.drivingDunk - penalty);
+        adjustedRating.speed = (int)Mathf.Max(1, adjustedRating.speed - penalty);
+        adjustedRating.perimeterDefense = (int)Mathf.Max(1, adjustedRating.perimeterDefense - penalty);
+        adjustedRating.interiorDefense = (int)Mathf.Max(1, adjustedRating.interiorDefense - penalty);
+        adjustedRating.block = (int)Mathf.Max(1, adjustedRating.block - penalty);
+        adjustedRating.steal = (int)Mathf.Max(1, adjustedRating.steal - penalty);
+        adjustedRating.drawFoul = (int)Mathf.Max(1, adjustedRating.drawFoul - (penalty * 0.5f));
+        adjustedRating.offensiveRebound = (int)Mathf.Max(1, adjustedRating.offensiveRebound - penalty);
+        adjustedRating.defensiveRebound = (int)Mathf.Max(1, adjustedRating.defensiveRebound - penalty);
+        adjustedRating.ballHandle = (int)Mathf.Max(1, adjustedRating.ballHandle - (penalty * 0.7f));
+        
+        return adjustedRating;
     }
     
     private void PrintFinalLogs()
@@ -535,6 +736,113 @@ public class GameSimulator : MonoBehaviour, IGameSimulator
         {
             string line = $"{p.Rating.name}: {p.Stats.Points} PTS, {p.Stats.FieldGoalsMade}/{p.Stats.FieldGoalsAttempted} FG, {p.Stats.DefensiveRebounds+p.Stats.OffensiveRebounds} REB, {p.Stats.Assists} AST, {p.Stats.Fouls} PF";
             Debug.Log(line);
+        }
+    }
+    #endregion
+
+    #region GameFlow
+    
+    private void ResolveShootingFoul(GamePlayer shooter, GamePlayer foulPlayer, int freeThrows)
+    {
+        // 파울을 범한 선수의 파울 카운트 증가
+        foulPlayer.LiveStats.PersonalFouls++;
+        AddLog($"{foulPlayer.Rating.name} commits a shooting foul on {shooter.Rating.name} ({foulPlayer.LiveStats.PersonalFouls} PF).");
+        AddUILog($"{foulPlayer.Rating.name} commits a shooting foul. ({foulPlayer.LiveStats.PersonalFouls} PF)", foulPlayer);
+
+        // 6반칙 퇴장 체크
+        if (foulPlayer.LiveStats.PersonalFouls >= 6)
+        {
+            EjectPlayer(foulPlayer, "6 Personal Fouls");
+        }
+
+        CurrentState.Shooter = shooter;
+        CurrentState.FreeThrowsRemaining = freeThrows;
+        CurrentState.IsShootingFreeThrows = true;
+    }
+
+    private void ResolveRebound(GamePlayer originalShooter = null)
+    {
+        ConsumeTime(UnityEngine.Random.Range(2, 5));
+        var allPlayers = GetAllPlayersOnCourt();
+        if (allPlayers.Count == 0) return;
+
+        var reboundScores = new Dictionary<GamePlayer, float>();
+        float totalScore = 0;
+        
+        GamePlayer shooter = originalShooter ?? CurrentState.Shooter;
+        int offensiveTeamId = shooter.TeamId;
+
+        foreach (var p in allPlayers)
+        {
+            var adjustedP = GetAdjustedRating(p);
+            float score = (p.TeamId == offensiveTeamId) ? adjustedP.offensiveRebound : adjustedP.defensiveRebound;
+            score += UnityEngine.Random.Range(1, 20);
+            reboundScores.Add(p, score);
+            totalScore += score;
+        }
+
+        float randomPoint = UnityEngine.Random.Range(0, totalScore);
+        GamePlayer rebounder = reboundScores.FirstOrDefault(kvp => { randomPoint -= kvp.Value; return randomPoint < 0; }).Key;
+        if (rebounder == null) rebounder = allPlayers.FirstOrDefault();
+        
+        if (rebounder.TeamId == offensiveTeamId)
+        {
+            rebounder.Stats.OffensiveRebounds++;
+            AddLog($"{rebounder.Rating.name} grabs the offensive rebound.");
+            AddUILog($"{rebounder.Rating.name} grabs the offensive rebound.", rebounder);
+        }
+        else
+        {
+            rebounder.Stats.DefensiveRebounds++;
+            AddLog($"{rebounder.Rating.name} grabs the defensive rebound.");
+            AddUILog($"{rebounder.Rating.name} grabs the defensive rebound.", rebounder);
+        }
+
+        CurrentState.PossessingTeamId = rebounder.TeamId;
+        CurrentState.ShotClockSeconds = (rebounder.TeamId == offensiveTeamId) ? 14f : 24f;
+        CurrentState.LastPasser = rebounder; 
+        CurrentState.PotentialAssister = null;
+    }
+
+    private void ResolveFreeThrow()
+    {
+        if (CurrentState.Shooter == null) return;
+
+        var stat = CurrentState.Shooter.Stats;
+        var rating = GetAdjustedRating(CurrentState.Shooter);
+        float ftChance = rating.freeThrow;
+
+        if (UnityEngine.Random.Range(0, 100) < ftChance)
+        {
+            stat.FTM++;
+            stat.Points++;
+            UpdatePlusMinusOnScore(CurrentState.Shooter.TeamId, 1);
+            AddUILog($"{CurrentState.Shooter.Rating.name} makes a free throw.", CurrentState.Shooter);
+        }
+        else
+        {
+            AddUILog($"{CurrentState.Shooter.Rating.name} misses a free throw.", CurrentState.Shooter);
+        }
+        
+        CurrentState.PotentialAssister = null;
+        CurrentState.FreeThrowsRemaining--;
+
+        if (CurrentState.FreeThrowsRemaining <= 0)
+        {
+            CurrentState.IsShootingFreeThrows = false;
+            // Last free throw, resolve rebound
+            ResolveRebound();
+        }
+    }
+    
+    #endregion
+    
+    #region GameSimulatorOnly
+    private void UpdateScoreboardUI()
+    {
+        if (UIManager.Instance != null)
+        {
+            UIManager.Instance.UpdateScoreboard(CurrentState);
         }
     }
     #endregion

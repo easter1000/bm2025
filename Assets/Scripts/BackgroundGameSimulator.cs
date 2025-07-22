@@ -19,6 +19,7 @@ public class BackgroundGameSimulator : IGameSimulator
     // 게임 시간 기준 60초마다 교체 검사
     private float substitutionCheckInterval = 60.0f; 
     private float _timeUntilNextSubCheck = 60.0f;
+    private float _timeUntilNextInjuryCheck = 30f; // [추가]
 
     public GameResult SimulateFullGame(Schedule gameToPlay)
     {
@@ -60,7 +61,14 @@ public class BackgroundGameSimulator : IGameSimulator
                     UpdateAllPlayerStamina(timeElapsed);
                     UpdatePlayerTime(timeElapsed); // <<< 출전 시간 기록 호출
 
+                    _timeUntilNextInjuryCheck -= timeElapsed; // [추가]
                     _timeUntilNextSubCheck -= timeElapsed;
+
+                    if (_timeUntilNextInjuryCheck <= 0)
+                    {
+                        CheckForInjuries();
+                        _timeUntilNextInjuryCheck = 60f;
+                    }
                     if (_timeUntilNextSubCheck <= 0)
                     {
                         CheckForSubstitutions();
@@ -81,7 +89,23 @@ public class BackgroundGameSimulator : IGameSimulator
             CurrentState.Quarter++;
         }
 
-        var finalPlayerStats = _homeTeamRoster.Concat(_awayTeamRoster)
+        var allPlayers = _homeTeamRoster.Concat(_awayTeamRoster).ToList();
+
+        // [추가] 경기 종료 후 스태미나/부상 상태 DB에 저장
+        foreach (var p in allPlayers)
+        {
+            int minutesPlayed = (int)(p.Stats.MinutesPlayedInSeconds / 60);
+            if (p.IsEjected && p.Stats.Fouls < 6) // 퇴장 사유가 6반칙이 아니면 부상으로 간주
+            {
+                LocalDbManager.Instance.UpdatePlayerAfterGame(p.Rating.player_id, minutesPlayed, true, GenerateInjuryDuration());
+            }
+            else
+            {
+                LocalDbManager.Instance.UpdatePlayerAfterGame(p.Rating.player_id, minutesPlayed, false, 0);
+            }
+        }
+
+        var finalPlayerStats = allPlayers
             .Select(p => p.ExportToPlayerStat(p.Rating.player_id, CurrentState.Season, CurrentState.GameId))
             .ToList();
         
@@ -108,7 +132,29 @@ public class BackgroundGameSimulator : IGameSimulator
         _homeTeamRoster = LocalDbManager.Instance.GetPlayersByTeam(gameInfo.HomeTeamAbbr).Select(p => new GamePlayer(p, 0)).ToList();
         _awayTeamRoster = LocalDbManager.Instance.GetPlayersByTeam(gameInfo.AwayTeamAbbr).Select(p => new GamePlayer(p, 1)).ToList();
 
-        if (_homeTeamRoster.Count < 5 || _awayTeamRoster.Count < 5)
+        // [추가] 경기 전 선수 스태미나 설정
+        foreach (var p in _homeTeamRoster.Concat(_awayTeamRoster))
+        {
+            var status = LocalDbManager.Instance.GetPlayerStatus(p.Rating.player_id);
+            if (status != null)
+            {
+                p.MaxStaminaForGame = status.Stamina;
+                p.CurrentStamina = status.Stamina;
+                p.IsCurrentlyInjured = status.IsInjured;
+                if (status.IsInjured)
+                {
+                    // 부상 중인 선수는 경기는 뛰지만, 능력치가 감소됨
+                }
+            }
+        }
+
+        // [추가] 선발 라인업을 정하기 전, 모든 선수의 초기 EffectiveOverall을 계산
+        foreach (var p in _homeTeamRoster.Concat(_awayTeamRoster))
+        {
+            RecalculateEffectiveOverall(p);
+        }
+
+        if (_homeTeamRoster.Count(p => !p.IsEjected) < 5 || _awayTeamRoster.Count(p => !p.IsEjected) < 5)
         {
             return false;
         }
@@ -146,7 +192,7 @@ public class BackgroundGameSimulator : IGameSimulator
     private void SelectStarters(List<GamePlayer> roster)
     {
         roster.ForEach(p => p.IsOnCourt = false);
-        var sortedRoster = roster.OrderByDescending(p => p.Rating.overallAttribute).ToList();
+        var sortedRoster = roster.Where(p => !p.IsEjected).OrderByDescending(p => p.EffectiveOverall).ToList();
         var filledPositions = new HashSet<int>();
 
         foreach (var player in sortedRoster)
@@ -161,7 +207,7 @@ public class BackgroundGameSimulator : IGameSimulator
         
         if (roster.Count(p => p.IsOnCourt) < 5)
         {
-            roster.Where(p => !p.IsOnCourt).Take(5 - roster.Count(p => p.IsOnCourt)).ToList().ForEach(p => p.IsOnCourt = true);
+            roster.Where(p => !p.IsOnCourt && !p.IsEjected).Take(5 - roster.Count(p => p.IsOnCourt)).ToList().ForEach(p => p.IsOnCourt = true);
         }
     }
 
@@ -179,8 +225,10 @@ public class BackgroundGameSimulator : IGameSimulator
             else
             {
                 player.CurrentStamina += staminaRecoveryRate * gameTimeDelta;
-                player.CurrentStamina = Mathf.Min(100, player.CurrentStamina);
+                player.CurrentStamina = Mathf.Min(player.MaxStaminaForGame, player.CurrentStamina);
             }
+            // [추가] 스태미나 변경 후 모든 선수의 실질 OVR을 다시 계산
+            RecalculateEffectiveOverall(player);
         }
     }
     
@@ -204,24 +252,34 @@ public class BackgroundGameSimulator : IGameSimulator
 
     private void ProcessTeamSubstitutions(List<GamePlayer> teamRoster)
     {
-        var tiredPlayers = teamRoster
-            .Where(p => p.IsOnCourt && p.CurrentStamina < staminaSubOutThreshold)
-            .OrderBy(p => p.CurrentStamina)
-            .ToList();
-
-        foreach (var playerOut in tiredPlayers)
+        bool substitutionMade;
+        do
         {
-            var bestAvailableSub = FindBestSubstitute(teamRoster, playerOut, true);
-            if (bestAvailableSub == null && playerOut.CurrentStamina < 15f)
-            {
-                bestAvailableSub = FindBestSubstitute(teamRoster, playerOut, false);
-            }
+            substitutionMade = false;
+            var playerOut = teamRoster
+                .Where(p => p.IsOnCourt && !p.IsEjected)
+                .OrderBy(p => p.CurrentStamina)
+                .FirstOrDefault(p => {
+                    var bestSub = FindBestSubstitute(teamRoster, p, false);
+                    return p.CurrentStamina < staminaSubOutThreshold || 
+                           (bestSub != null && p.EffectiveOverall < bestSub.EffectiveOverall - 5);
+                });
 
-            if (bestAvailableSub != null)
+            if (playerOut != null)
             {
-                PerformSubstitution(playerOut, bestAvailableSub);
+                var bestAvailableSub = FindBestSubstitute(teamRoster, playerOut, true);
+                if (bestAvailableSub == null && playerOut.CurrentStamina < 15f)
+                {
+                    bestAvailableSub = FindBestSubstitute(teamRoster, playerOut, false);
+                }
+
+                if (bestAvailableSub != null)
+                {
+                    PerformSubstitution(playerOut, bestAvailableSub);
+                    substitutionMade = true;
+                }
             }
-        }
+        } while (substitutionMade);
     }
     
     private GamePlayer FindBestSubstitute(List<GamePlayer> roster, GamePlayer playerOut, bool requireHighStamina)
@@ -233,7 +291,7 @@ public class BackgroundGameSimulator : IGameSimulator
         };
         var outgoingPosition = playerOut.Rating.position;
 
-        var candidates = roster.Where(p => !p.IsOnCourt);
+        var candidates = roster.Where(p => !p.IsOnCourt && !p.IsEjected);
 
         if (requireHighStamina)
         {
@@ -250,7 +308,7 @@ public class BackgroundGameSimulator : IGameSimulator
         if (bestSub == null && !requireHighStamina) 
         {
             bestSub = roster
-                .Where(p => !p.IsOnCourt)
+                .Where(p => !p.IsOnCourt && !p.IsEjected)
                 .OrderByDescending(p => p.CurrentStamina)
                 .FirstOrDefault();
         }
@@ -287,32 +345,58 @@ public class BackgroundGameSimulator : IGameSimulator
     public PlayerRating GetAdjustedRating(GamePlayer player)
     {
         if (player == null) return new PlayerRating();
+        
+        var baseRating = player.Rating;
+        var adjustedRating = new PlayerRating();
+        
+        if (player.IsCurrentlyInjured)
+        {
+            adjustedRating.closeShot = baseRating.closeShot / 2;
+            adjustedRating.midRangeShot = baseRating.midRangeShot / 2;
+            adjustedRating.threePointShot = baseRating.threePointShot / 2;
+            adjustedRating.freeThrow = baseRating.freeThrow / 2;
+            adjustedRating.layup = baseRating.layup / 2;
+            adjustedRating.drivingDunk = baseRating.drivingDunk / 2;
+            adjustedRating.drawFoul = baseRating.drawFoul / 2;
+            adjustedRating.interiorDefense = baseRating.interiorDefense / 2;
+            adjustedRating.perimeterDefense = baseRating.perimeterDefense / 2;
+            adjustedRating.steal = baseRating.steal / 2;
+            adjustedRating.block = baseRating.block / 2;
+            adjustedRating.speed = baseRating.speed / 2;
+            adjustedRating.stamina = baseRating.stamina / 2;
+            adjustedRating.passIQ = baseRating.passIQ / 2;
+            adjustedRating.ballHandle = baseRating.ballHandle / 2;
+            adjustedRating.offensiveRebound = baseRating.offensiveRebound / 2;
+            adjustedRating.defensiveRebound = baseRating.defensiveRebound / 2;
+        }
+        else
+        {
+            adjustedRating = baseRating;
+        }
+
         float stamina = player.CurrentStamina;
-        if (stamina >= 70) return player.Rating;
+        if (stamina >= 70) return adjustedRating;
         
         float fatigueFactor = (70f - stamina) / 70f;
-        var baseRating = player.Rating;
         float maxPenalty = 15.0f; 
         float penalty = fatigueFactor * maxPenalty;
 
-        return new PlayerRating {
-            player_id = baseRating.player_id, name = baseRating.name,
-            closeShot = (int)Mathf.Max(1, baseRating.closeShot - penalty),
-            midRangeShot = (int)Mathf.Max(1, baseRating.midRangeShot - penalty),
-            threePointShot = (int)Mathf.Max(1, baseRating.threePointShot - penalty),
-            layup = (int)Mathf.Max(1, baseRating.layup - penalty),
-            drivingDunk = (int)Mathf.Max(1, baseRating.drivingDunk - penalty),
-            speed = (int)Mathf.Max(1, baseRating.speed - penalty),
-            perimeterDefense = (int)Mathf.Max(1, baseRating.perimeterDefense - penalty),
-            interiorDefense = (int)Mathf.Max(1, baseRating.interiorDefense - penalty),
-            block = (int)Mathf.Max(1, baseRating.block - penalty),
-            steal = (int)Mathf.Max(1, baseRating.steal - penalty),
-            freeThrow = baseRating.freeThrow, passIQ = baseRating.passIQ,
-            drawFoul = (int)Mathf.Max(1, baseRating.drawFoul - (penalty * 0.5f)),
-            offensiveRebound = (int)Mathf.Max(1, baseRating.offensiveRebound - penalty),
-            defensiveRebound = (int)Mathf.Max(1, baseRating.defensiveRebound - penalty),
-            ballHandle = (int)Mathf.Max(1, baseRating.ballHandle - (penalty * 0.7f))
-        };
+        adjustedRating.closeShot = (int)Mathf.Max(1, adjustedRating.closeShot - penalty);
+        adjustedRating.midRangeShot = (int)Mathf.Max(1, adjustedRating.midRangeShot - penalty);
+        adjustedRating.threePointShot = (int)Mathf.Max(1, adjustedRating.threePointShot - penalty);
+        adjustedRating.layup = (int)Mathf.Max(1, adjustedRating.layup - penalty);
+        adjustedRating.drivingDunk = (int)Mathf.Max(1, adjustedRating.drivingDunk - penalty);
+        adjustedRating.speed = (int)Mathf.Max(1, adjustedRating.speed - penalty);
+        adjustedRating.perimeterDefense = (int)Mathf.Max(1, adjustedRating.perimeterDefense - penalty);
+        adjustedRating.interiorDefense = (int)Mathf.Max(1, adjustedRating.interiorDefense - penalty);
+        adjustedRating.block = (int)Mathf.Max(1, adjustedRating.block - penalty);
+        adjustedRating.steal = (int)Mathf.Max(1, adjustedRating.steal - penalty);
+        adjustedRating.drawFoul = (int)Mathf.Max(1, adjustedRating.drawFoul - (penalty * 0.5f));
+        adjustedRating.offensiveRebound = (int)Mathf.Max(1, adjustedRating.offensiveRebound - penalty);
+        adjustedRating.defensiveRebound = (int)Mathf.Max(1, adjustedRating.defensiveRebound - penalty);
+        adjustedRating.ballHandle = (int)Mathf.Max(1, adjustedRating.ballHandle - (penalty * 0.7f));
+        
+        return adjustedRating;
     }
     
     public void AddLog(string description) 
@@ -363,7 +447,12 @@ public class BackgroundGameSimulator : IGameSimulator
     
     public NodeState ResolveShootingFoul(GamePlayer shooter, GamePlayer defender, int freeThrows)
     {
-        defender.Stats.Fouls++;
+        defender.LiveStats.PersonalFouls++;
+        if (defender.LiveStats.PersonalFouls >= 6)
+        {
+            EjectPlayer(defender, "6 Personal Fouls");
+        }
+
         shooter.Stats.FieldGoalsAttempted++;
         if (freeThrows == 3) shooter.Stats.ThreePointersAttempted++;
         
@@ -424,6 +513,194 @@ public class BackgroundGameSimulator : IGameSimulator
     {
         blocker.Stats.Blocks++;
         ResolveRebound(shooter);
+    }
+
+    public void EjectPlayer(GamePlayer player, string reason)
+    {
+        player.IsEjected = true;
+        player.IsOnCourt = false;
+
+        var teamRoster = (player.TeamId == 0) ? _homeTeamRoster : _awayTeamRoster;
+        var substitute = FindBestSubstitute(teamRoster, player, false);
+        
+        if (substitute != null)
+        {
+            PerformSubstitution(player, substitute);
+        }
+    }
+
+    private void CheckForInjuries()
+    {
+        foreach (var player in GetAllPlayersOnCourt())
+        {
+            float injuryPossibility = player.Rating.injury * (100f - player.CurrentStamina) / 5f / 48f;
+            if (UnityEngine.Random.Range(0f, 100f) < injuryPossibility)
+            {
+                EjectPlayer(player, "Injury");
+                break;
+            }
+        }
+    }
+
+    private int GenerateInjuryDuration()
+    {
+        float rand = UnityEngine.Random.Range(0f, 1f);
+        if (rand < 0.82f) return UnityEngine.Random.Range(1, 8);
+        else if (rand < 0.97f) return UnityEngine.Random.Range(8, 31);
+        else return UnityEngine.Random.Range(31, 179);
+    }
+
+    private void RecalculateEffectiveOverall(GamePlayer player)
+    {
+        var adjustedRating = GetAdjustedRating(player);
+        int effectiveOvr = (
+            adjustedRating.closeShot + adjustedRating.midRangeShot + adjustedRating.threePointShot +
+            adjustedRating.drivingDunk + adjustedRating.layup + adjustedRating.freeThrow +
+            adjustedRating.interiorDefense + adjustedRating.perimeterDefense + adjustedRating.steal + adjustedRating.block +
+            adjustedRating.speed + adjustedRating.passIQ + adjustedRating.ballHandle +
+            adjustedRating.offensiveRebound + adjustedRating.defensiveRebound
+        ) / 15;
+        player.EffectiveOverall = effectiveOvr;
+    }
+
+    #endregion
+
+    #region IGameSimulator_Implementation
+
+    public void AddUILog(string message, GamePlayer eventOwner)
+    {
+        // 백그라운드 시뮬레이터에서는 UI 로그를 출력하지 않음
+    }
+
+    public void ConsumeTime(float seconds)
+    {
+        CurrentState.GameClockSeconds -= seconds;
+        CurrentState.ShotClockSeconds -= seconds;
+    }
+    
+    public GamePlayer GetRandomDefender(int attackingTeamId)
+    {
+        var defenders = GetPlayersOnCourt(1 - attackingTeamId);
+        if (defenders.Count == 0) return null;
+        return defenders[UnityEngine.Random.Range(0, defenders.Count)];
+    }
+    
+    public NodeState ResolveShootingFoul(GamePlayer shooter, GamePlayer defender, int freeThrows)
+    {
+        defender.LiveStats.PersonalFouls++;
+        if (defender.LiveStats.PersonalFouls >= 6)
+        {
+            EjectPlayer(defender, "6 Personal Fouls");
+        }
+
+        shooter.Stats.FieldGoalsAttempted++;
+        if (freeThrows == 3) shooter.Stats.ThreePointersAttempted++;
+        
+        var freeThrowAction = new Action_ShootFreeThrows(shooter, freeThrows);
+        return freeThrowAction.Evaluate(this, shooter); 
+    }
+
+    public void ResolveRebound(GamePlayer shooter)
+    {
+        ConsumeTime(UnityEngine.Random.Range(2, 5));
+        var allPlayers = GetAllPlayersOnCourt();
+        var reboundScores = new Dictionary<GamePlayer, float>();
+        float totalScore = 0;
+
+        foreach (var p in allPlayers)
+        {
+            var adjustedP = GetAdjustedRating(p);
+            float score = (p.TeamId == shooter.TeamId) ? adjustedP.offensiveRebound : adjustedP.defensiveRebound;
+            score += UnityEngine.Random.Range(1, 20);
+            reboundScores.Add(p, score);
+            totalScore += score;
+        }
+
+        float randomPoint = UnityEngine.Random.Range(0, totalScore);
+        GamePlayer rebounder = reboundScores.FirstOrDefault(p => { randomPoint -= p.Value; return randomPoint < 0; }).Key;
+        if (rebounder == null) rebounder = allPlayers.FirstOrDefault();
+
+        if (rebounder.TeamId == shooter.TeamId)
+        {
+            rebounder.Stats.OffensiveRebounds++;
+            CurrentState.ShotClockSeconds = 14f;
+            CurrentState.PossessingTeamId = rebounder.TeamId;
+            CurrentState.LastPasser = rebounder;
+        }
+        else
+        {
+            rebounder.Stats.DefensiveRebounds++;
+            CurrentState.PossessingTeamId = rebounder.TeamId;
+            CurrentState.ShotClockSeconds = 24f;
+            CurrentState.LastPasser = null;
+        }
+    }
+
+    public void ResolveTurnover(GamePlayer offensivePlayer, GamePlayer defensivePlayer, bool isSteal)
+    {
+        offensivePlayer.Stats.Turnovers++;
+        if (isSteal)
+        {
+            defensivePlayer.Stats.Steals++;
+        }
+        CurrentState.PossessingTeamId = 1 - offensivePlayer.TeamId;
+        CurrentState.ShotClockSeconds = 24f;
+        CurrentState.LastPasser = null;
+        CurrentState.PotentialAssister = null;
+    }
+
+    public void ResolveBlock(GamePlayer shooter, GamePlayer blocker)
+    {
+        blocker.Stats.Blocks++;
+        ResolveRebound(shooter);
+    }
+
+    public void EjectPlayer(GamePlayer player, string reason)
+    {
+        player.IsEjected = true;
+        player.IsOnCourt = false;
+
+        var teamRoster = (player.TeamId == 0) ? _homeTeamRoster : _awayTeamRoster;
+        var substitute = FindBestSubstitute(teamRoster, player, false);
+        
+        if (substitute != null)
+        {
+            PerformSubstitution(player, substitute);
+        }
+    }
+
+    private void CheckForInjuries()
+    {
+        foreach (var player in GetAllPlayersOnCourt())
+        {
+            float injuryPossibility = player.Rating.injury * (100f - player.CurrentStamina) / 5f / 48f;
+            if (UnityEngine.Random.Range(0f, 100f) < injuryPossibility)
+            {
+                EjectPlayer(player, "Injury");
+                break;
+            }
+        }
+    }
+
+    private int GenerateInjuryDuration()
+    {
+        float rand = UnityEngine.Random.Range(0f, 1f);
+        if (rand < 0.82f) return UnityEngine.Random.Range(1, 8);
+        else if (rand < 0.97f) return UnityEngine.Random.Range(8, 31);
+        else return UnityEngine.Random.Range(31, 179);
+    }
+
+    private void RecalculateEffectiveOverall(GamePlayer player)
+    {
+        var adjustedRating = GetAdjustedRating(player);
+        int effectiveOvr = (
+            adjustedRating.closeShot + adjustedRating.midRangeShot + adjustedRating.threePointShot +
+            adjustedRating.drivingDunk + adjustedRating.layup + adjustedRating.freeThrow +
+            adjustedRating.interiorDefense + adjustedRating.perimeterDefense + adjustedRating.steal + adjustedRating.block +
+            adjustedRating.speed + adjustedRating.passIQ + adjustedRating.ballHandle +
+            adjustedRating.offensiveRebound + adjustedRating.defensiveRebound
+        ) / 15;
+        player.EffectiveOverall = effectiveOvr;
     }
 
     #endregion

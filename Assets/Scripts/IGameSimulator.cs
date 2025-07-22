@@ -8,7 +8,7 @@ public interface IGameSimulator
 
     // 공유 메서드 - GamePlayer는 GamaData.cs의 것을 사용
     void AddLog(string description);
-    void AddUILog(string message); // UI 로그를 위한 메서드 추가
+    void AddUILog(string message, GamePlayer eventOwner); // UI 로그를 위한 메서드 추가
     void RecordAssist(GamePlayer passer);
     void UpdatePlusMinusOnScore(int scoringTeamId, int points);
     void ConsumeTime(float seconds);
@@ -19,5 +19,6 @@ public interface IGameSimulator
     void ResolveRebound(GamePlayer shooter);
     void ResolveTurnover(GamePlayer offensivePlayer, GamePlayer defensivePlayer, bool isSteal); // 스틸/턴오버 처리
     void ResolveBlock(GamePlayer shooter, GamePlayer blocker); // 블락 처리
+    void EjectPlayer(GamePlayer player, string reason); // [추가] 선수 퇴장 처리
     PlayerRating GetAdjustedRating(GamePlayer player);
 } 

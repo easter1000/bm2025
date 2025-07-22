@@ -282,8 +282,9 @@ public class CalendarGrid : MonoBehaviour
                 Debug.Log("[CalendarGrid] No AI games to simulate today.");
             }
 
-            // 모든 AI 경기 처리 후: 날짜를 하루 진행하고, 트레이드 시도 후, UI 새로고침
+            // 모든 AI 경기 처리 후: 날짜를 하루 진행하고, DB 상태 업데이트 후, UI 새로고침
             LocalDbManager.Instance.AdvanceUserDate();
+            LocalDbManager.Instance.UpdateAllPlayerStatusForNewDay(); // [추가] 모든 선수 스태미나/부상 회복
             SeasonManager.Instance.AttemptAiToAiTrades();
             
             // UI 업데이트
