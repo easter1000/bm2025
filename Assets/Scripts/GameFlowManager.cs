@@ -19,7 +19,7 @@ public class GameFlowManager : MonoBehaviour
         GameSimulator.OnGameFinished -= OnGameSimulationFinished;
     }
 
-    private void OnGameSimulationFinished(GameResult result)
+    private void OnGameSimulationFinished(GameSimulator.GameResult result)
     {
         Debug.Log("게임 시뮬레이션 종료 이벤트를 수신했습니다. 후처리 작업을 시작합니다.");
 

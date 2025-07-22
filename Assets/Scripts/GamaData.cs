@@ -27,7 +27,7 @@ public class GamePlayer
             PlayerId = playerId,
             Season = season,
             GameId = gameId,
-            MinutesPlayed = this.Stats.MinutesPlayedInSeconds / 60, // 초를 분으로 변환
+            SecondsPlayed = (int)this.Stats.MinutesPlayedInSeconds, // 초를 분으로 변환
             Points = this.Stats.Points,
             Assists = this.Stats.Assists,
             Rebounds = this.Stats.OffensiveRebounds + this.Stats.DefensiveRebounds,

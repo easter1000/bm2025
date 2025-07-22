@@ -13,7 +13,7 @@ public class SeasonManager : MonoBehaviour
         {
             if (_instance == null)
             {
-                _instance = FindObjectOfType<SeasonManager>();
+                _instance = FindAnyObjectByType<SeasonManager>();
                 if (_instance == null)
                 {
                     GameObject obj = new GameObject("SeasonManager");

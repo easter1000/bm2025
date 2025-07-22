@@ -1,332 +1,419 @@
-using UnityEngine;
-using System.Linq;
 using System.Collections.Generic;
+using System.Linq;
+using UnityEngine;
 
-// --- 조건 노드: 3점슛을 쏠 만한 상황인가? ---
-public class Condition_IsOpenFor3 : ConditionNode
+public abstract class Node
 {
-    public override NodeState Evaluate(GameSimulator simulator, GamePlayer player)
+    public abstract NodeState Evaluate(GameSimulator sim, GameSimulator.GamePlayer player);
+}
+
+public enum NodeState { SUCCESS, FAILURE }
+
+public class Sequence : Node
+{
+    private List<Node> _nodes;
+    public Sequence(List<Node> nodes) { _nodes = nodes; }
+    public override NodeState Evaluate(GameSimulator sim, GameSimulator.GamePlayer player)
     {
-        var adjustedRating = simulator.GetAdjustedRating(player);
+        foreach (var node in _nodes)
+        {
+            if (node.Evaluate(sim, player) == NodeState.FAILURE) return NodeState.FAILURE;
+        }
+        return NodeState.SUCCESS;
+    }
+}
 
-        float tendency = 25f;
-        tendency += (player.Rating.overallAttribute - 85) * 0.25f;
-
-        bool willTry3Pointer = adjustedRating.threePointShot > 75 && Random.Range(0, 100) < tendency;
-        if (willTry3Pointer) return NodeState.SUCCESS;
+public class Selector : Node
+{
+    private List<Node> _nodes;
+    public Selector(List<Node> nodes) { _nodes = nodes; }
+    public override NodeState Evaluate(GameSimulator sim, GameSimulator.GamePlayer player)
+    {
+        foreach (var node in _nodes)
+        {
+            if (node.Evaluate(sim, player) == NodeState.SUCCESS) return NodeState.SUCCESS;
+        }
         return NodeState.FAILURE;
     }
 }
 
-// --- 조건 노드: 돌파가 가능한가? ---
-public class Condition_CanDrive : ConditionNode
+// [신규] 공격 시간이 얼마 남지 않았는지 확인하는 조건
+public class Condition_IsShotClockLow : Node
 {
-    public override NodeState Evaluate(GameSimulator simulator, GamePlayer player)
+    public override NodeState Evaluate(GameSimulator sim, GameSimulator.GamePlayer player)
     {
-        var adjustedRating = simulator.GetAdjustedRating(player);
-
-        float driveTendency = 20 + (adjustedRating.drivingDunk + adjustedRating.layup) / 2.0f * 0.3f;
-        driveTendency += (player.Rating.overallAttribute - 85) * 0.3f;
-        if (Random.Range(0, 100) >= driveTendency) return NodeState.FAILURE;
-
-        var defender = simulator.GetRandomDefender(player.TeamId);
-        var adjustedDefenderRating = simulator.GetAdjustedRating(defender);
-
-        float successChance = 50 + (adjustedRating.ballHandle + adjustedRating.speed) / 2f - adjustedDefenderRating.perimeterDefense;
-        successChance = Mathf.Clamp(successChance, 10, 90);
-        if (Random.Range(0, 100) < successChance) return NodeState.SUCCESS;
+        if (sim.CurrentState.ShotClockSeconds < 5f) // 압박 시간 7초 -> 5초로 변경
+        {
+            sim.AddLog("Shot clock is winding down! Gotta shoot!");
+            return NodeState.SUCCESS;
+        }
         return NodeState.FAILURE;
     }
 }
 
 // --- 조건 노드: 결정적인 패스 기회가 있는가? ---
-public class Condition_IsGoodPassOpportunity : ConditionNode
+public class Condition_IsGoodPassOpportunity : Node
 {
-    public override NodeState Evaluate(GameSimulator simulator, GamePlayer player)
+    public override NodeState Evaluate(GameSimulator sim, GameSimulator.GamePlayer player)
     {
-        var teammates = simulator.GetPlayersOnCourt(player.TeamId).Where(p => p != player).ToList();
-        if (teammates.Count == 0) return NodeState.FAILURE;
-
-        var bestTeammate = teammates.OrderByDescending(p => p.Rating.overallAttribute).First();
-
-        float passValue = (bestTeammate.Rating.overallAttribute - player.Rating.overallAttribute) * 0.5f;
-        passValue += (player.Rating.passIQ - 85) * 0.2f;
-
-        if (passValue > Random.Range(3f, 6f))
-        {
-            return NodeState.SUCCESS;
-        }
-
+        // 패스 빈도 현실화: 기본 확률을 45%로 유지
+        float passTendency = 45f; 
+        passTendency += (player.Rating.passIQ - 80); 
+        if (UnityEngine.Random.Range(0, 100) < passTendency) return NodeState.SUCCESS;
         return NodeState.FAILURE;
     }
 }
 
-// --- 조건 노드: 미드레인지 슛을 쏠 만한 상황인가? ---
-public class Condition_IsGoodForMidRange : ConditionNode
+public class Condition_IsOpenFor3 : Node
 {
-    public override NodeState Evaluate(GameSimulator simulator, GamePlayer player)
+    public override NodeState Evaluate(GameSimulator sim, GameSimulator.GamePlayer player)
     {
-        var adjustedRating = simulator.GetAdjustedRating(player);
-
-        float tendency = 34f;
-        tendency += (player.Rating.overallAttribute - 85) * 0.25f;
-
-        bool willTry = adjustedRating.midRangeShot > 70 && Random.Range(0, 100) < tendency;
-        if (willTry)
+        // 3점슛 시도 경향: 3점슛 능력치가 70 이상일 때부터 시도 확률 발생
+        float tendency = (player.Rating.threePointShot - 70) * 2.0f;
+        if (UnityEngine.Random.Range(0, 100) < tendency)
         {
+            sim.AddLog($"{player.Rating.name} is looking for a 3-point opportunity.");
             return NodeState.SUCCESS;
         }
         return NodeState.FAILURE;
     }
 }
 
-// --- 액션 노드: 3점슛 시도 ---
-public class Action_Try3PointShot : ActionNode
+public class Condition_CanDrive : Node
 {
-    public override NodeState Evaluate(GameSimulator simulator, GamePlayer player)
+    public override NodeState Evaluate(GameSimulator sim, GameSimulator.GamePlayer player)
     {
-        var adjustedRating = simulator.GetAdjustedRating(player);
-        var defender = simulator.GetRandomDefender(player.TeamId);
-        var adjustedDefenderRating = simulator.GetAdjustedRating(defender);
-        simulator.ConsumeTime(Random.Range(2, 5));
-
-        float foulChance = 10 + (adjustedRating.drawFoul - adjustedDefenderRating.perimeterDefense) / 4f;
-        if (Random.Range(0, 100) < foulChance)
+        // 돌파 시도 경향: 돌파 관련 능력치에 기반
+        float tendency = (player.Rating.drivingDunk + player.Rating.layup - 140) * 1.5f;
+         if (UnityEngine.Random.Range(0, 100) < tendency)
         {
-            return simulator.ResolveShootingFoul(player, defender, 3);
+            sim.AddLog($"{player.Rating.name} is trying to drive.");
+            return NodeState.SUCCESS;
         }
+        return NodeState.FAILURE;
+    }
+}
 
+public class Condition_IsGoodForMidRange : Node
+{
+    public override NodeState Evaluate(GameSimulator sim, GameSimulator.GamePlayer player)
+    {
+        // 중거리슛 시도 경향: 중거리슛 능력치에 기반
+        float tendency = (player.Rating.midRangeShot - 65) * 2.0f;
+        if (UnityEngine.Random.Range(0, 100) < tendency)
+        {
+            sim.AddLog($"{player.Rating.name} finds space for a mid-range shot.");
+            return NodeState.SUCCESS;
+        }
+        return NodeState.FAILURE;
+    }
+}
+
+// --- 액션 노드 ---
+public class Action_Try3PointShot : Node
+{
+    public override NodeState Evaluate(GameSimulator sim, GameSimulator.GamePlayer player)
+    {
         player.Stats.FieldGoalsAttempted++;
         player.Stats.ThreePointersAttempted++;
 
-        float baseChance = 36f;
-        float ratingModifier = (adjustedRating.threePointShot - 75) * 0.5f - (adjustedDefenderRating.perimeterDefense - 75) * 0.5f;
+        var defender = sim.GetRandomDefender(player.TeamId);
+        var shooterRating = sim.GetAdjustedRating(player);
+        var defenderRating = sim.GetAdjustedRating(defender);
 
-        float passIQBonus = 0f;
-        if (simulator.CurrentState.LastPasser != null)
+        // 성공률: 슈터의 3점슛 능력치 vs 수비수의 외곽 수비 능력치
+        float successChance = 40f + (shooterRating.threePointShot - defenderRating.perimeterDefense) * 0.8f;
+        successChance = UnityEngine.Mathf.Clamp(successChance, 5f, 95f);
+
+        sim.AddLog($"{player.Rating.name} shoots a 3-pointer over {defender.Rating.name}. Chance: {successChance:F1}%");
+
+        if (UnityEngine.Random.Range(0, 100) < successChance)
         {
-            float passerIQ = simulator.CurrentState.LastPasser.Rating.passIQ;
-            if (passerIQ > 75)
-            {
-                passIQBonus = (passerIQ - 75) * 0.2f;
-            }
-        }
-
-        float successChance = Mathf.Clamp(baseChance + ratingModifier + passIQBonus, 15f, 65f);
-
-        if (Random.Range(0, 100) < successChance)
-        {
+            // (득점 및 스탯 기록 로직은 이전과 동일)
+            sim.CurrentState.HomeScore += (player.TeamId == 0) ? 3 : 0;
+            sim.CurrentState.AwayScore += (player.TeamId == 1) ? 3 : 0;
             player.Stats.Points += 3;
             player.Stats.FieldGoalsMade++;
             player.Stats.ThreePointersMade++;
-
-            string description = $"{player.Rating.name} makes a three point jumper.";
-            if (simulator.CurrentState.LastPasser != null)
-            {
-                simulator.CurrentState.LastPasser.Stats.Assists++;
-                description += $" (assist by {simulator.CurrentState.LastPasser.Rating.name})";
-            }
-            if (player.TeamId == 0) simulator.CurrentState.HomeScore += 3; else simulator.CurrentState.AwayScore += 3;
-            simulator.AddLog(description);
-            simulator.CurrentState.LastPasser = null;
-            simulator.CurrentState.PossessingTeamId = 1 - player.TeamId;
+            sim.RecordAssist(sim.CurrentState.LastPasser);
+            sim.UpdatePlusMinusOnScore(player.TeamId, 3);
+            sim.AddLog("It's good!");
         }
         else
         {
-            simulator.AddLog($"{player.Rating.name} misses a three point jumper.");
-            simulator.ResolveRebound(player);
+            sim.AddLog("It's off the mark.");
+            sim.ResolveRebound(player);
         }
+        sim.ConsumeTime(UnityEngine.Random.Range(3, 6));
         return NodeState.SUCCESS;
     }
 }
 
-// --- 액션 노드: 돌파 후 마무리 ---
-public class Action_DriveAndFinish : ActionNode
+public class Action_DriveAndFinish : Node
 {
-    public override NodeState Evaluate(GameSimulator simulator, GamePlayer player)
+    public override NodeState Evaluate(GameSimulator sim, GameSimulator.GamePlayer player)
     {
-        var adjustedRating = simulator.GetAdjustedRating(player);
-        var interiorDefender = simulator.GetRandomDefender(player.TeamId);
-        var adjustedDefenderRating = simulator.GetAdjustedRating(interiorDefender);
-        simulator.ConsumeTime(Random.Range(3, 6));
-
-        float foulChance = 15 + (adjustedRating.drawFoul - adjustedDefenderRating.interiorDefense) / 4f;
-        if (Random.Range(0, 100) < foulChance)
-        {
-            return simulator.ResolveShootingFoul(player, interiorDefender, 2);
-        }
-
         player.Stats.FieldGoalsAttempted++;
-        float baseChance = 55f;
-        float offensePower = (adjustedRating.layup + adjustedRating.drivingDunk) / 2f;
-        float defensePower = (adjustedDefenderRating.interiorDefense + adjustedDefenderRating.block) / 2f;
-        float ratingModifier = (offensePower - 75) - (defensePower - 75);
 
-        float passIQBonus = 0f;
-        if (simulator.CurrentState.LastPasser != null)
+        var defender = sim.GetRandomDefender(player.TeamId);
+        var shooterRating = sim.GetAdjustedRating(player);
+        var defenderRating = sim.GetAdjustedRating(defender);
+
+        // 파울 확률
+        float foulChance = (defenderRating.drawFoul - 50) * 0.5f;
+        if (UnityEngine.Random.Range(0, 100) < foulChance)
         {
-            float passerIQ = simulator.CurrentState.LastPasser.Rating.passIQ;
-            if (passerIQ > 75)
-            {
-                passIQBonus = (passerIQ - 75) * 0.2f;
-            }
+            return sim.ResolveShootingFoul(player, defender, 2);
         }
 
-        float finishChance = Mathf.Clamp(baseChance + ratingModifier + passIQBonus, 25f, 95f);
+        // 성공률: 슈터의 돌파/레이업 능력치 vs 수비수의 내부 수비 능력치
+        float offensePower = (shooterRating.layup + shooterRating.drivingDunk) / 2f;
+        float successChance = 55f + (offensePower - defenderRating.interiorDefense) * 0.9f;
+        successChance = UnityEngine.Mathf.Clamp(successChance, 10f, 95f);
+        
+        sim.AddLog($"{player.Rating.name} drives past {defender.Rating.name} for a layup. Chance: {successChance:F1}%");
 
-        if (Random.Range(0, 100) < finishChance)
+        if (UnityEngine.Random.Range(0, 100) < successChance)
         {
+            // (득점 및 스탯 기록 로직은 이전과 동일)
+            sim.CurrentState.HomeScore += (player.TeamId == 0) ? 2 : 0;
+            sim.CurrentState.AwayScore += (player.TeamId == 1) ? 2 : 0;
             player.Stats.Points += 2;
             player.Stats.FieldGoalsMade++;
-
-            string description = $"{player.Rating.name} drives and makes a layup.";
-            if (simulator.CurrentState.LastPasser != null)
-            {
-                simulator.CurrentState.LastPasser.Stats.Assists++;
-                description += $" (assist by {simulator.CurrentState.LastPasser.Rating.name})";
-            }
-            if (player.TeamId == 0) simulator.CurrentState.HomeScore += 2; else simulator.CurrentState.AwayScore += 2;
-            simulator.AddLog(description);
-            simulator.CurrentState.LastPasser = null;
-            simulator.CurrentState.PossessingTeamId = 1 - player.TeamId;
+            sim.RecordAssist(sim.CurrentState.LastPasser);
+            sim.UpdatePlusMinusOnScore(player.TeamId, 2);
+            sim.AddLog("Scores!");
         }
         else
         {
-            simulator.AddLog($"{player.Rating.name} misses the layup.");
-            simulator.ResolveRebound(player);
+            sim.AddLog("Missed the layup under pressure.");
+            sim.ResolveRebound(player);
         }
+        sim.ConsumeTime(UnityEngine.Random.Range(4, 7));
         return NodeState.SUCCESS;
     }
 }
 
-// --- 액션 노드: 미드레인지 슛 시도 ---
-public class Action_TryMidRangeShot : ActionNode
+public class Action_TryMidRangeShot : Node
 {
-    public override NodeState Evaluate(GameSimulator simulator, GamePlayer player)
+    public override NodeState Evaluate(GameSimulator sim, GameSimulator.GamePlayer player)
     {
-        var adjustedRating = simulator.GetAdjustedRating(player);
-        var defender = simulator.GetRandomDefender(player.TeamId);
-        var adjustedDefenderRating = simulator.GetAdjustedRating(defender);
-        simulator.ConsumeTime(Random.Range(3, 6));
-
-        float foulChance = 12 + (adjustedRating.drawFoul - adjustedDefenderRating.perimeterDefense) / 4f;
-        if (Random.Range(0, 100) < foulChance)
-        {
-            return simulator.ResolveShootingFoul(player, defender, 2);
-        }
-
         player.Stats.FieldGoalsAttempted++;
-        float baseChance = 42f;
-        float ratingModifier = (adjustedRating.midRangeShot - 75) * 0.5f - (adjustedDefenderRating.perimeterDefense - 75) * 0.5f;
 
-        float passIQBonus = 0f;
-        if (simulator.CurrentState.LastPasser != null)
+        var defender = sim.GetRandomDefender(player.TeamId);
+        var shooterRating = sim.GetAdjustedRating(player);
+        var defenderRating = sim.GetAdjustedRating(defender);
+
+        // 성공률: 슈터의 중거리슛 능력치 vs 수비수의 외곽 수비 능력치
+        float successChance = 50f + (shooterRating.midRangeShot - defenderRating.perimeterDefense) * 0.85f;
+        successChance = UnityEngine.Mathf.Clamp(successChance, 15f, 90f);
+
+        sim.AddLog($"{player.Rating.name} takes a mid-range jumper against {defender.Rating.name}. Chance: {successChance:F1}%");
+        
+        if (UnityEngine.Random.Range(0, 100) < successChance)
         {
-            float passerIQ = simulator.CurrentState.LastPasser.Rating.passIQ;
-            if (passerIQ > 75)
-            {
-                passIQBonus = (passerIQ - 75) * 0.2f;
-            }
-        }
-
-        float successChance = Mathf.Clamp(baseChance + ratingModifier + passIQBonus, 20f, 75f);
-
-        if (Random.Range(0, 100) < successChance)
-        {
+            // (득점 및 스탯 기록 로직은 이전과 동일)
+            sim.CurrentState.HomeScore += (player.TeamId == 0) ? 2 : 0;
+            sim.CurrentState.AwayScore += (player.TeamId == 1) ? 2 : 0;
             player.Stats.Points += 2;
             player.Stats.FieldGoalsMade++;
-
-            string description = $"{player.Rating.name} makes a pullup jump shot.";
-            if (simulator.CurrentState.LastPasser != null)
-            {
-                simulator.CurrentState.LastPasser.Stats.Assists++;
-                description += $" (assist by {simulator.CurrentState.LastPasser.Rating.name})";
-            }
-            if (player.TeamId == 0) simulator.CurrentState.HomeScore += 2; else simulator.CurrentState.AwayScore += 2;
-            simulator.AddLog(description);
-            simulator.CurrentState.LastPasser = null;
-            simulator.CurrentState.PossessingTeamId = 1 - player.TeamId;
+            sim.RecordAssist(sim.CurrentState.LastPasser);
+            sim.UpdatePlusMinusOnScore(player.TeamId, 2);
+            sim.AddLog("Swish.");
         }
         else
         {
-            simulator.AddLog($"{player.Rating.name} misses a pullup jump shot.");
-            simulator.ResolveRebound(player);
+            sim.AddLog("Clanks off the rim.");
+            sim.ResolveRebound(player);
         }
+        sim.ConsumeTime(UnityEngine.Random.Range(3, 6));
         return NodeState.SUCCESS;
     }
 }
 
-// --- 액션 노드: 가장 좋은 동료에게 패스 ---
-public class Action_PassToBestTeammate : ActionNode
+public class Action_ShootFreeThrows : Node
 {
-    public override NodeState Evaluate(GameSimulator simulator, GamePlayer player)
-    {
-        var teammates = simulator.GetPlayersOnCourt(player.TeamId).Where(p => p != player).ToList();
-        if (teammates.Count == 0) return NodeState.FAILURE;
+    private GameSimulator.GamePlayer _shooter;
+    private int _attempts;
 
-        var bestTeammate = teammates.OrderByDescending(p => {
-            float score = p.Rating.overallAttribute * 0.7f;
-            score += p.Rating.passIQ > 75 ? p.Rating.threePointShot : p.Rating.midRangeShot;
-            return score;
-        }).First();
-
-        simulator.ConsumeTime(Random.Range(1, 3));
-        simulator.AddLog($"{player.Rating.name} passes the ball to {bestTeammate.Rating.name}.");
-
-        simulator.CurrentState.LastPasser = player;
-
-        return simulator.GetRootNode().Evaluate(simulator, bestTeammate);
-    }
-}
-
-// --- 액션 노드: 자유투 실행 ---
-public class Action_ShootFreeThrows : ActionNode
-{
-    private GamePlayer _shooter;
-    private int _numberOfShots;
-
-    public Action_ShootFreeThrows(GamePlayer shooter, int numberOfShots)
+    public Action_ShootFreeThrows(GameSimulator.GamePlayer shooter, int attempts)
     {
         _shooter = shooter;
-        _numberOfShots = numberOfShots;
+        _attempts = attempts;
     }
 
-    public override NodeState Evaluate(GameSimulator simulator, GamePlayer player)
+    public override NodeState Evaluate(GameSimulator sim, GameSimulator.GamePlayer player)
     {
-        bool lastShotMade = false;
-        for (int i = 0; i < _numberOfShots; i++)
+        int made = 0;
+        for (int i = 0; i < _attempts; i++)
         {
-            simulator.ConsumeTime(Random.Range(4, 8));
             _shooter.Stats.FreeThrowsAttempted++;
-
-            bool isSuccess = Random.Range(0, 100) < _shooter.Rating.freeThrow;
-            if (isSuccess)
+            if (Random.Range(0, 100) < _shooter.Rating.freeThrow)
             {
+                made++;
                 _shooter.Stats.FreeThrowsMade++;
-                _shooter.Stats.Points++;
-                if (_shooter.TeamId == 0) simulator.CurrentState.HomeScore++; else simulator.CurrentState.AwayScore++;
-                simulator.AddLog($"{_shooter.Rating.name} makes free throw ({i + 1} of {_numberOfShots}).");
-                lastShotMade = true;
-            }
-            else
-            {
-                simulator.AddLog($"{_shooter.Rating.name} misses free throw ({i + 1} of {_numberOfShots}).");
-                lastShotMade = false;
             }
         }
-
-        if (lastShotMade)
+        
+        if (made > 0)
         {
-            simulator.CurrentState.PossessingTeamId = 1 - _shooter.TeamId;
+            _shooter.Stats.Points += made;
+            sim.CurrentState.HomeScore += (_shooter.TeamId == 0) ? made : 0;
+            sim.CurrentState.AwayScore += (_shooter.TeamId == 1) ? made : 0;
+            sim.UpdatePlusMinusOnScore(_shooter.TeamId, made);
+        }
+        
+        sim.AddLog($"{_shooter.Rating.name} makes {made} of {_attempts} free throws.");
+        sim.ConsumeTime(Random.Range(5, 10));
+
+        if (sim.CurrentState.PossessingTeamId == _shooter.TeamId)
+        {
+           sim.CurrentState.PossessingTeamId = 1 - _shooter.TeamId;
+        }
+
+        return NodeState.SUCCESS;
+    }
+}
+
+public class Action_PassToBestTeammate : Node
+{
+    public override NodeState Evaluate(GameSimulator sim, GameSimulator.GamePlayer player)
+    {
+        var teammates = sim.GetPlayersOnCourt(player.TeamId).Where(p => p != player).ToList();
+        if (teammates.Count == 0)
+        {
+            player.Stats.Turnovers++;
+            sim.AddLog($"{player.Rating.name} has no one to pass to, turnover!");
+            sim.CurrentState.PossessingTeamId = 1 - player.TeamId;
+            return NodeState.FAILURE;
+        }
+
+        var bestTeammate = teammates.OrderByDescending(p => p.Rating.overallAttribute).First();
+        sim.CurrentState.LastPasser = player;
+        sim.AddLog($"{player.Rating.name} passes to {bestTeammate.Rating.name}.");
+        sim.ConsumeTime(Random.Range(2, 4));
+        
+        return NodeState.SUCCESS;
+    }
+}
+
+// --- [신규] 샷클락 압박 상황에서 사용하는 성공률 낮은 버전의 액션 노드들 ---
+
+public class Action_TryForced3PointShot : Node
+{
+    public override NodeState Evaluate(GameSimulator sim, GameSimulator.GamePlayer player)
+    {
+        player.Stats.FieldGoalsAttempted++;
+        player.Stats.ThreePointersAttempted++;
+
+        var defender = sim.GetRandomDefender(player.TeamId);
+        var shooterRating = sim.GetAdjustedRating(player);
+        var defenderRating = sim.GetAdjustedRating(defender);
+
+        // 성공률: 기존 로직에서 10% 페널티 적용
+        float successChance = 30f + (shooterRating.threePointShot - defenderRating.perimeterDefense) * 0.8f;
+        successChance = UnityEngine.Mathf.Clamp(successChance, 5f, 85f);
+
+        sim.AddLog($"FORCED 3-pointer by {player.Rating.name} over {defender.Rating.name}. Chance: {successChance:F1}%");
+
+        if (UnityEngine.Random.Range(0, 100) < successChance)
+        {
+            sim.CurrentState.HomeScore += (player.TeamId == 0) ? 3 : 0;
+            sim.CurrentState.AwayScore += (player.TeamId == 1) ? 3 : 0;
+            player.Stats.Points += 3;
+            player.Stats.FieldGoalsMade++;
+            player.Stats.ThreePointersMade++;
+            sim.RecordAssist(sim.CurrentState.LastPasser);
+            sim.UpdatePlusMinusOnScore(player.TeamId, 3);
+            sim.AddLog("It's good!");
         }
         else
         {
-            simulator.AddLog("Rebound after missed free throw.");
-            simulator.ResolveRebound(_shooter);
+            sim.AddLog("It's off the mark.");
+            sim.ResolveRebound(player);
+        }
+        sim.ConsumeTime(UnityEngine.Random.Range(3, 6));
+        return NodeState.SUCCESS;
+    }
+}
+
+public class Action_TryForcedDrive : Node
+{
+    public override NodeState Evaluate(GameSimulator sim, GameSimulator.GamePlayer player)
+    {
+        player.Stats.FieldGoalsAttempted++;
+        var defender = sim.GetRandomDefender(player.TeamId);
+        
+        var shooterRating = sim.GetAdjustedRating(player);
+        var defenderRating = sim.GetAdjustedRating(defender);
+
+        // 파울 확률
+        float foulChance = (defenderRating.drawFoul - 50) * 0.5f;
+        if (UnityEngine.Random.Range(0, 100) < foulChance)
+        {
+            return sim.ResolveShootingFoul(player, defender, 2);
         }
 
-        simulator.CurrentState.LastPasser = null;
+        // 성공률: 슈터의 돌파/레이업 능력치 vs 수비수의 내부 수비 능력치
+        float offensePower = (shooterRating.layup + shooterRating.drivingDunk) / 2f;
 
+        // 성공률: 기존 로직에서 10% 페널티 적용
+        float successChance = 45f + (offensePower - defenderRating.interiorDefense) * 0.9f;
+        successChance = UnityEngine.Mathf.Clamp(successChance, 10f, 85f);
+        
+        sim.AddLog($"FORCED drive by {player.Rating.name} past {defender.Rating.name}. Chance: {successChance:F1}%");
+
+        if (UnityEngine.Random.Range(0, 100) < successChance)
+        {
+            sim.CurrentState.HomeScore += (player.TeamId == 0) ? 2 : 0;
+            sim.CurrentState.AwayScore += (player.TeamId == 1) ? 2 : 0;
+            player.Stats.Points += 2;
+            player.Stats.FieldGoalsMade++;
+            sim.RecordAssist(sim.CurrentState.LastPasser);
+            sim.UpdatePlusMinusOnScore(player.TeamId, 2);
+            sim.AddLog("Scores!");
+        }
+        else
+        {
+            sim.AddLog("Missed the layup under pressure.");
+            sim.ResolveRebound(player);
+        }
+        sim.ConsumeTime(UnityEngine.Random.Range(4, 7));
+        return NodeState.SUCCESS;
+    }
+}
+
+public class Action_TryForcedMidRangeShot : Node
+{
+    public override NodeState Evaluate(GameSimulator sim, GameSimulator.GamePlayer player)
+    {
+        player.Stats.FieldGoalsAttempted++;
+        var defender = sim.GetRandomDefender(player.TeamId);
+        var shooterRating = sim.GetAdjustedRating(player);
+        var defenderRating = sim.GetAdjustedRating(defender);
+
+        // 성공률: 기존 로직에서 10% 페널티 적용
+        float successChance = 40f + (shooterRating.midRangeShot - defenderRating.perimeterDefense) * 0.85f;
+        successChance = UnityEngine.Mathf.Clamp(successChance, 15f, 80f);
+
+        sim.AddLog($"FORCED mid-range by {player.Rating.name} against {defender.Rating.name}. Chance: {successChance:F1}%");
+        
+        if (UnityEngine.Random.Range(0, 100) < successChance)
+        {
+            sim.CurrentState.HomeScore += (player.TeamId == 0) ? 2 : 0;
+            sim.CurrentState.AwayScore += (player.TeamId == 1) ? 2 : 0;
+            player.Stats.Points += 2;
+            player.Stats.FieldGoalsMade++;
+            sim.RecordAssist(sim.CurrentState.LastPasser);
+            sim.UpdatePlusMinusOnScore(player.TeamId, 2);
+            sim.AddLog("Swish.");
+        }
+        else
+        {
+            sim.AddLog("Clanks off the rim.");
+            sim.ResolveRebound(player);
+        }
+        sim.ConsumeTime(UnityEngine.Random.Range(3, 6));
         return NodeState.SUCCESS;
     }
 }
