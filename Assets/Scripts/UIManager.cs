@@ -26,7 +26,14 @@ public class UIManager : MonoBehaviour
     public TextMeshProUGUI homeScoreText;
     public TextMeshProUGUI awayScoreText;
     public TextMeshProUGUI gameClockText;
-    public TextMeshProUGUI quarterText;
+    public TextMeshProUGUI periodText; // quarterText에서 이름 변경
+    public Image homeTeamLogo; // 새로 추가
+    public Image awayTeamLogo; // 새로 추가
+    public Image homeTeamBackground; // 새로 추가
+    public Image awayTeamBackground; // 새로 추가
+
+    [Header("Game Log UI")]
+    public GameLogUI gameLogUI; // 새로 추가
 
     [Header("Court & Puck References")]
     public PlayerPuck playerPuckPrefab;
@@ -54,12 +61,14 @@ public class UIManager : MonoBehaviour
     {
         GameSimulator.OnGameStateUpdated += UpdateScoreboard;
         GameSimulator.OnPlayerSubstituted += UpdatePlayerPuck;
+        GameSimulator.OnUILogGenerated += HandleUILog; // 새로 추가
     }
 
     void OnDisable()
     {
         GameSimulator.OnGameStateUpdated -= UpdateScoreboard;
         GameSimulator.OnPlayerSubstituted -= UpdatePlayerPuck;
+        GameSimulator.OnUILogGenerated -= HandleUILog; // 새로 추가
     }
     
     public void InitializePlayerPucks(List<GamePlayer> homeRoster, List<GamePlayer> awayRoster)
@@ -93,18 +102,52 @@ public class UIManager : MonoBehaviour
         }
     }
     
+    // [수정됨] SetTeamNames -> SetUpScoreboard 로 기능 확장 및 변경
+    public void SetUpScoreboard(Team homeTeam, Team awayTeam)
+    {
+        // 1. 팀 이름을 약어(abbv)로 설정
+        homeTeamNameText.text = homeTeam.team_abbv;
+        awayTeamNameText.text = awayTeam.team_abbv;
+
+        // 2. 팀 로고 설정 (Resources/team_photos/ 폴더에서 약어로 로드)
+        homeTeamLogo.sprite = Resources.Load<Sprite>($"team_photos/{homeTeam.team_abbv}");
+        awayTeamLogo.sprite = Resources.Load<Sprite>($"team_photos/{awayTeam.team_abbv}");
+
+        // 3. 팀 배경색 설정
+        Color color;
+        if (ColorUtility.TryParseHtmlString(homeTeam.team_color, out color))
+        {
+            homeTeamBackground.color = color;
+        }
+        if (ColorUtility.TryParseHtmlString(awayTeam.team_color, out color))
+        {
+            awayTeamBackground.color = color;
+        }
+    }
+
     public void SetTeamNames(string homeName, string awayName)
     {
         homeTeamNameText.text = homeName;
         awayTeamNameText.text = awayName;
     }
     
+    // [수정됨] 경기 시간 및 쿼터 표시 방식 변경
     private void UpdateScoreboard(GameState state)
     {
         homeScoreText.text = state.HomeScore.ToString();
         awayScoreText.text = state.AwayScore.ToString();
-        quarterText.text = $"Q{state.Quarter}";
+
+        // 쿼터를 1Q, 2Q, 3Q, 4Q, 연장(OT)으로 표시
+        if (state.Quarter <= 4)
+        {
+            periodText.text = $"{state.Quarter}Q";
+        }
+        else
+        {
+            periodText.text = $"OT{state.Quarter - 4}";
+        }
         
+        // 게임 및 샷 클락 시간 업데이트
         float clock = Mathf.Max(0, state.GameClockSeconds);
         gameClockText.text = $"{(int)clock / 60:00}:{(int)clock % 60:00}";
     }
@@ -176,5 +219,14 @@ public class UIManager : MonoBehaviour
             return _teamColors[teamAbbreviation];
         }
         return Color.gray;
+    }
+
+    // OnEnable/OnDisable에서 등록/해제할 이벤트 핸들러
+    private void HandleUILog(string message)
+    {
+        if (gameLogUI != null)
+        {
+            gameLogUI.AddLogEntry(message);
+        }
     }
 }

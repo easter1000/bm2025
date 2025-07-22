@@ -84,6 +84,7 @@ public class GameState
     public int HomeScore { get; set; } = 0;
     public int AwayScore { get; set; } = 0;
     public GamePlayer LastPasser { get; set; } = null; 
+    public GamePlayer PotentialAssister { get; set; } = null;
 }
 
 // 로그 출력을 위한 구조체

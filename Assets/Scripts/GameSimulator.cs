@@ -12,7 +12,7 @@ public class GameSimulator : MonoBehaviour, IGameSimulator
     public static event Action<GameResult> OnGameFinished; 
 
     [Header("Simulation Settings")]
-    public float simulationSpeed = 8.0f;
+    public float SimulationSpeed { get; set; } = 12.0f; // 기본 12배속 (48분 경기 -> 4분)
 
     [Header("Stamina & Substitution Settings")]
     public float staminaSubOutThreshold = 40f;
@@ -27,9 +27,8 @@ public class GameSimulator : MonoBehaviour, IGameSimulator
     // GamePlayer, GameState는 GamaData.cs의 것을 사용하므로 이벤트 타입 변경
     public static event Action<GameState> OnGameStateUpdated;
     public static event Action<GamePlayer, GamePlayer> OnPlayerSubstituted;
+    public static event Action<string> OnUILogGenerated; // UI 표시용 로그 이벤트
     
-    // 내부 클래스 (GamePlayer, GameState, GameLogEntry, GameResult 등) 모두 삭제
-
     private List<GamePlayer> _homeTeamRoster; // GamaData.cs의 GamePlayer 사용
     private List<GamePlayer> _awayTeamRoster; // GamaData.cs의 GamePlayer 사용
     
@@ -69,7 +68,7 @@ public class GameSimulator : MonoBehaviour, IGameSimulator
     {
         if (_status != SimStatus.Running) return;
         
-        float gameTimeDelta = Time.deltaTime * simulationSpeed;
+        float gameTimeDelta = Time.deltaTime * SimulationSpeed;
         CurrentState.GameClockSeconds -= gameTimeDelta;
         _timeUntilNextPossession -= gameTimeDelta;
         _timeUntilNextSubCheck -= Time.deltaTime;
@@ -164,6 +163,13 @@ public class GameSimulator : MonoBehaviour, IGameSimulator
 
         SelectStarters(_homeTeamRoster);
         SelectStarters(_awayTeamRoster);
+
+        // UIManager 초기화 호출 추가
+        if (UIManager.Instance != null)
+        {
+            UIManager.Instance.SetUpScoreboard(homeTeamInfo, awayTeamInfo);
+            UIManager.Instance.InitializePlayerPucks(_homeTeamRoster, _awayTeamRoster);
+        }
     }
 
     private void SelectStarters(List<GamePlayer> roster)
@@ -190,7 +196,7 @@ public class GameSimulator : MonoBehaviour, IGameSimulator
     
     public void RecordAssist(GamePlayer passer)
     {
-        if (passer != null)
+        if (passer != null && CurrentState.LastPasser != passer)
         {
             passer.Stats.Assists++;
             AddLog($"{passer.Rating.name} gets the assist.");
@@ -383,6 +389,13 @@ public class GameSimulator : MonoBehaviour, IGameSimulator
         Debug.Log(entry.ToString());
     }
 
+    public void AddUILog(string message)
+    {
+        float clock = Mathf.Max(0, CurrentState.GameClockSeconds);
+        string timeStamp = $"Q{CurrentState.Quarter} {(int)clock / 60:00}:{(int)clock % 60:00}";
+        OnUILogGenerated?.Invoke($"{timeStamp} | {CurrentState.HomeScore} - {CurrentState.AwayScore} | {message}");
+    }
+
     public GamePlayer GetRandomDefender(int attackingTeamId)
     {
         var defenders = GetPlayersOnCourt(1 - attackingTeamId);
@@ -429,6 +442,7 @@ public class GameSimulator : MonoBehaviour, IGameSimulator
             CurrentState.ShotClockSeconds = 14f;
             CurrentState.PossessingTeamId = rebounder.TeamId;
             CurrentState.LastPasser = rebounder; // 공 잡은 선수 설정
+            CurrentState.PotentialAssister = null; // 리바운드 시 어시스트 초기화
         }
         else
         {
@@ -437,7 +451,37 @@ public class GameSimulator : MonoBehaviour, IGameSimulator
             CurrentState.PossessingTeamId = rebounder.TeamId;
             CurrentState.ShotClockSeconds = 24f;
             CurrentState.LastPasser = null; // 공격권 전환, 어시스트 초기화
+            CurrentState.PotentialAssister = null; // 공격권 전환, 어시스트 초기화
         }
+    }
+
+    public void ResolveTurnover(GamePlayer offensivePlayer, GamePlayer defensivePlayer, bool isSteal)
+    {
+        offensivePlayer.Stats.Turnovers++;
+        if (isSteal)
+        {
+            defensivePlayer.Stats.Steals++;
+            AddLog($"{defensivePlayer.Rating.name} steals the ball from {offensivePlayer.Rating.name}!");
+            AddUILog($"{defensivePlayer.Rating.name} STEALS the ball from {offensivePlayer.Rating.name}");
+        }
+        else
+        {
+            AddLog($"{offensivePlayer.Rating.name} commits a turnover.");
+            AddUILog($"{offensivePlayer.Rating.name} commits a turnover");
+        }
+        
+        CurrentState.PossessingTeamId = 1 - offensivePlayer.TeamId;
+        CurrentState.ShotClockSeconds = 24f;
+        CurrentState.LastPasser = null;
+        CurrentState.PotentialAssister = null;
+    }
+
+    public void ResolveBlock(GamePlayer shooter, GamePlayer blocker)
+    {
+        blocker.Stats.Blocks++;
+        AddLog($"{blocker.Rating.name} BLOCKS the shot from {shooter.Rating.name}!");
+        AddUILog($"{blocker.Rating.name} BLOCKS the shot by {shooter.Rating.name}");
+        ResolveRebound(shooter); // 블락된 공은 리바운드로 이어짐
     }
     
     public PlayerRating GetAdjustedRating(GamePlayer player)

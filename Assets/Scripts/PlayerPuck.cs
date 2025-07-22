@@ -5,9 +5,8 @@ using TMPro;
 public class PlayerPuck : MonoBehaviour
 {
     // Inspector 창에서 연결할 UI 요소들
-    [SerializeField] private Image borderImage;
-    [SerializeField] private Image playerPhotoImage;
-    [SerializeField] private TextMeshProUGUI nameText;
+    [SerializeField] private Image circleImage;
+    [SerializeField] private TextMeshProUGUI numberText;
     
     private GamePlayer _player;
     private Button _button;
@@ -27,38 +26,11 @@ public class PlayerPuck : MonoBehaviour
     {
         _player = player;
         
-        // 1. 선수 이름 설정
-        nameText.text = player.Rating.name;
+        // 1. 원의 색상을 팀 컬러로 설정
+        circleImage.color = UIManager.Instance.GetTeamColor(player.Rating.team);
 
-        // 2. 테두리 색상 설정 (UIManager에게 물어봄)
-        Color teamColor = UIManager.Instance.GetTeamColor(player.Rating.team);
-        borderImage.color = teamColor;
-
-        // 3. 선수 사진 로드
-        LoadPlayerPhoto(player.Rating.player_id);
-    }
-
-    // 선수 사진을 Resources 폴더에서 불러오는 함수
-    private void LoadPlayerPhoto(int playerId)
-    {
-        // 파일 경로 생성 (예: "player_photos/1234")
-        string path = $"player_photos/{playerId}";
-        
-        // 경로에서 스프라이트 로드 시도
-        Sprite playerSprite = Resources.Load<Sprite>(path);
-
-        // 만약 로드에 실패했다면 (파일이 없다면)
-        if (playerSprite == null)
-        {
-            // 기본 이미지 로드
-            playerSprite = Resources.Load<Sprite>("player_photos/default_image");
-        }
-
-        // 최종적으로 로드된 이미지를 UI에 적용
-        if (playerPhotoImage != null)
-        {
-            playerPhotoImage.sprite = playerSprite;
-        }
+        // 2. 텍스트에 등번호(backNumber) 설정
+        numberText.text = player.Rating.backNumber;
     }
 
     // 이 선수 원이 클릭되었을 때 호출되는 함수

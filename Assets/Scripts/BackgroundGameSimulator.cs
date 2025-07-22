@@ -320,6 +320,11 @@ public class BackgroundGameSimulator : IGameSimulator
         // 백그라운드에서는 로그를 출력하지 않음
     }
     
+    public void AddUILog(string message)
+    {
+        // 백그라운드에서는 UI 로그를 출력하지 않음
+    }
+
     public void RecordAssist(GamePlayer passer)
     {
         if (passer != null)
@@ -400,6 +405,25 @@ public class BackgroundGameSimulator : IGameSimulator
             CurrentState.ShotClockSeconds = 24f;
             CurrentState.LastPasser = null;
         }
+    }
+
+    public void ResolveTurnover(GamePlayer offensivePlayer, GamePlayer defensivePlayer, bool isSteal)
+    {
+        offensivePlayer.Stats.Turnovers++;
+        if (isSteal)
+        {
+            defensivePlayer.Stats.Steals++;
+        }
+        CurrentState.PossessingTeamId = 1 - offensivePlayer.TeamId;
+        CurrentState.ShotClockSeconds = 24f;
+        CurrentState.LastPasser = null;
+        CurrentState.PotentialAssister = null;
+    }
+
+    public void ResolveBlock(GamePlayer shooter, GamePlayer blocker)
+    {
+        blocker.Stats.Blocks++;
+        ResolveRebound(shooter);
     }
 
     #endregion

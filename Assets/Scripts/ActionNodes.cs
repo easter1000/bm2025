@@ -135,9 +135,17 @@ public class Action_Try3PointShot : Node
         var shooterRating = sim.GetAdjustedRating(player);
         var defenderRating = sim.GetAdjustedRating(defender);
 
-        // 성공률: 수비수 스탯에 1.35배 가중치를 부여하여 수비 영향력 강화
+        // 1. 블락 확률 계산
+        float blockChance = (defenderRating.block - 70) * 0.4f;
+        if (Random.Range(0, 100) < blockChance)
+        {
+            sim.ResolveBlock(player, defender);
+            return NodeState.SUCCESS;
+        }
+
+        // 2. 슛 성공률 계산
         float successChance = 40f + (shooterRating.threePointShot - (defenderRating.perimeterDefense * 1.35f)) * 0.8f;
-        successChance = UnityEngine.Mathf.Clamp(successChance, 5f, 95f);
+        successChance = Mathf.Clamp(successChance, 5f, 95f);
 
         sim.AddLog($"{player.Rating.name} shoots a 3-pointer over {defender.Rating.name}. Chance: {successChance:F1}%");
 
@@ -148,9 +156,11 @@ public class Action_Try3PointShot : Node
             player.Stats.Points += 3;
             player.Stats.FieldGoalsMade++;
             player.Stats.ThreePointersMade++;
-            sim.RecordAssist(sim.CurrentState.LastPasser);
+            sim.RecordAssist(sim.CurrentState.PotentialAssister);
             sim.UpdatePlusMinusOnScore(player.TeamId, 3);
             sim.AddLog("It's good!");
+            string assistText = sim.CurrentState.PotentialAssister != null ? $" (assist by {sim.CurrentState.PotentialAssister.Rating.name})" : "";
+            sim.AddUILog($"{player.Rating.name} makes 3-pointer over {defender.Rating.name}{assistText}");
             
             sim.CurrentState.PossessingTeamId = 1 - player.TeamId;
             sim.CurrentState.ShotClockSeconds = 24f;
@@ -159,10 +169,11 @@ public class Action_Try3PointShot : Node
         else
         {
             sim.AddLog("It's off the mark.");
+            sim.AddUILog($"{player.Rating.name} misses 3-pointer over {defender.Rating.name}");
             sim.ResolveRebound(player);
             sim.CurrentState.LastPasser = null; 
         }
-        sim.ConsumeTime(UnityEngine.Random.Range(4f, 8f));
+        sim.ConsumeTime(UnityEngine.Random.Range(4f, 7f));
         return NodeState.SUCCESS;
     }
 }
@@ -172,23 +183,41 @@ public class Action_DriveAndFinish : Node
     // GamePlayer 타입을 GamaData.cs의 것으로 변경
     public override NodeState Evaluate(IGameSimulator sim, GamePlayer player)
     {
-        player.Stats.FieldGoalsAttempted++;
-
         var defender = sim.GetRandomDefender(player.TeamId);
         var shooterRating = sim.GetAdjustedRating(player);
         var defenderRating = sim.GetAdjustedRating(defender);
-
-        // 파울 확률: 기본 확률 및 파울 유도 능력치 영향력 상향 (10%->15%, 0.7->0.8)
-        float foulChance = 15f + (shooterRating.drawFoul - 70) * 0.8f;
-        if (UnityEngine.Random.Range(0, 100) < foulChance)
+        
+        // 1. 스틸/턴오버 확률 계산
+        // ballHandle 80, steal 80일 때 약 3.5% 스틸 확률. 경기당 4~5개 기대.
+        float turnoverChance = 3.5f + (defenderRating.steal - shooterRating.ballHandle) * 0.2f; 
+        if (Random.Range(0, 100) < turnoverChance)
         {
+            sim.ResolveTurnover(player, defender, true); // 스틸에 의한 턴오버
+            return NodeState.SUCCESS;
+        }
+
+        player.Stats.FieldGoalsAttempted++;
+        
+        // 2. 파울 확률
+        float foulChance = 15f + (shooterRating.drawFoul - 70) * 0.8f;
+        if (Random.Range(0, 100) < foulChance)
+        {
+            sim.AddUILog($"{defender.Rating.name} commits a shooting foul on {player.Rating.name} ({defender.Stats.Fouls + 1} PF)");
             return sim.ResolveShootingFoul(player, defender, 2);
         }
 
-        // 성공률: 내부 수비수 스탯에 1.4배 가중치를 부여하여 수비 영향력 강화
+        // 3. 블락 확률 계산
+        float blockChance = (defenderRating.block - 60) * 0.5f;
+        if (Random.Range(0, 100) < blockChance)
+        {
+            sim.ResolveBlock(player, defender);
+            return NodeState.SUCCESS;
+        }
+
+        // 4. 슛 성공률 계산
         float offensePower = (shooterRating.layup + shooterRating.drivingDunk) / 2f;
         float successChance = 55f + (offensePower - (defenderRating.interiorDefense * 1.4f)) * 0.9f;
-        successChance = UnityEngine.Mathf.Clamp(successChance, 10f, 95f);
+        successChance = Mathf.Clamp(successChance, 10f, 95f);
         
         sim.AddLog($"{player.Rating.name} drives past {defender.Rating.name} for a layup. Chance: {successChance:F1}%");
 
@@ -198,9 +227,11 @@ public class Action_DriveAndFinish : Node
             sim.CurrentState.AwayScore += (player.TeamId == 1) ? 2 : 0;
             player.Stats.Points += 2;
             player.Stats.FieldGoalsMade++;
-            sim.RecordAssist(sim.CurrentState.LastPasser);
+            sim.RecordAssist(sim.CurrentState.PotentialAssister);
             sim.UpdatePlusMinusOnScore(player.TeamId, 2);
             sim.AddLog("Scores!");
+            string assistText = sim.CurrentState.PotentialAssister != null ? $" (assist by {sim.CurrentState.PotentialAssister.Rating.name})" : "";
+            sim.AddUILog($"{player.Rating.name} makes 2-point shot against {defender.Rating.name}{assistText}");
 
             sim.CurrentState.PossessingTeamId = 1 - player.TeamId;
             sim.CurrentState.ShotClockSeconds = 24f;
@@ -209,10 +240,11 @@ public class Action_DriveAndFinish : Node
         else
         {
             sim.AddLog("Missed the layup under pressure.");
+            sim.AddUILog($"{player.Rating.name} misses 2-point shot against {defender.Rating.name}");
             sim.ResolveRebound(player);
             sim.CurrentState.LastPasser = null;
         }
-        sim.ConsumeTime(UnityEngine.Random.Range(5f, 9f));
+        sim.ConsumeTime(UnityEngine.Random.Range(5f, 8f));
         return NodeState.SUCCESS;
     }
 }
@@ -228,9 +260,17 @@ public class Action_TryMidRangeShot : Node
         var shooterRating = sim.GetAdjustedRating(player);
         var defenderRating = sim.GetAdjustedRating(defender);
 
-        // 성공률: 수비수 스탯에 1.35배 가중치를 부여하여 수비 영향력 강화
+        // 1. 블락 확률 계산
+        float blockChance = (defenderRating.block - 75) * 0.35f;
+        if (Random.Range(0, 100) < blockChance)
+        {
+            sim.ResolveBlock(player, defender);
+            return NodeState.SUCCESS;
+        }
+
+        // 2. 슛 성공률 계산
         float successChance = 50f + (shooterRating.midRangeShot - (defenderRating.perimeterDefense * 1.35f)) * 0.85f;
-        successChance = UnityEngine.Mathf.Clamp(successChance, 15f, 90f);
+        successChance = Mathf.Clamp(successChance, 15f, 90f);
 
         sim.AddLog($"{player.Rating.name} takes a mid-range jumper against {defender.Rating.name}. Chance: {successChance:F1}%");
         
@@ -240,9 +280,11 @@ public class Action_TryMidRangeShot : Node
             sim.CurrentState.AwayScore += (player.TeamId == 1) ? 2 : 0;
             player.Stats.Points += 2;
             player.Stats.FieldGoalsMade++;
-            sim.RecordAssist(sim.CurrentState.LastPasser);
+            sim.RecordAssist(sim.CurrentState.PotentialAssister);
             sim.UpdatePlusMinusOnScore(player.TeamId, 2);
             sim.AddLog("Swish.");
+            string assistText = sim.CurrentState.PotentialAssister != null ? $" (assist by {sim.CurrentState.PotentialAssister.Rating.name})" : "";
+            sim.AddUILog($"{player.Rating.name} makes mid-range shot over {defender.Rating.name}{assistText}");
             
             sim.CurrentState.PossessingTeamId = 1 - player.TeamId;
             sim.CurrentState.ShotClockSeconds = 24f;
@@ -251,10 +293,11 @@ public class Action_TryMidRangeShot : Node
         else
         {
             sim.AddLog("Clanks off the rim.");
+            sim.AddUILog($"{player.Rating.name} misses mid-range shot over {defender.Rating.name}");
             sim.ResolveRebound(player);
             sim.CurrentState.LastPasser = null;
         }
-        sim.ConsumeTime(UnityEngine.Random.Range(4f, 8f));
+        sim.ConsumeTime(UnityEngine.Random.Range(4f, 7f));
         return NodeState.SUCCESS;
     }
 }
@@ -284,6 +327,8 @@ public class Action_ShootFreeThrows : Node
             }
         }
         
+        sim.AddUILog($"{_shooter.Rating.name} makes {made} of {_attempts} free throws");
+        
         if (made > 0)
         {
             _shooter.Stats.Points += made;
@@ -295,6 +340,7 @@ public class Action_ShootFreeThrows : Node
         sim.AddLog($"{_shooter.Rating.name} makes {made} of {_attempts} free throws.");
         
         sim.CurrentState.LastPasser = null;
+        sim.CurrentState.PotentialAssister = null;
         sim.CurrentState.PossessingTeamId = 1 - _shooter.TeamId;
         sim.CurrentState.ShotClockSeconds = 24f;
         
@@ -310,17 +356,26 @@ public class Action_PassToBestTeammate : Node
         var teammates = sim.GetPlayersOnCourt(player.TeamId).Where(p => p != player).ToList();
         if (teammates.Count == 0)
         {
-            player.Stats.Turnovers++;
-            sim.AddLog($"{player.Rating.name} has no one to pass to, turnover!");
-            sim.CurrentState.PossessingTeamId = 1 - player.TeamId;
-            sim.CurrentState.ShotClockSeconds = 24f;
-            sim.CurrentState.LastPasser = null; 
+            sim.ResolveTurnover(player, null, false); // 패스할 곳 없는 턴오버
             return NodeState.FAILURE;
         }
         
-        // OVR 기반 가중치 랜덤으로 패스할 동료 선택
+        // 1. 패스 중 스틸/턴오버 확률 계산
+        var defender = sim.GetRandomDefender(player.TeamId);
+        var passerRating = sim.GetAdjustedRating(player);
+        var defenderRating = sim.GetAdjustedRating(defender);
+
+        // passIQ 80, steal 80일 때 약 2.5% 스틸 확률. 경기당 3~4개 기대.
+        float turnoverChance = 2.5f + (defenderRating.steal - passerRating.passIQ) * 0.15f; 
+        if (Random.Range(0, 100) < turnoverChance)
+        {
+            sim.ResolveTurnover(player, defender, true); // 스틸에 의한 턴오버
+            return NodeState.SUCCESS;
+        }
+        
+        // 2. OVR 기반 가중치 랜덤으로 패스할 동료 선택
         float totalWeight = teammates.Sum(p => Mathf.Pow(p.Rating.overallAttribute, 2.0f));
-        float randomPoint = UnityEngine.Random.Range(0, totalWeight);
+        float randomPoint = Random.Range(0, totalWeight);
         
         GamePlayer bestTeammate = null;
         foreach (var teammate in teammates)
@@ -336,10 +391,11 @@ public class Action_PassToBestTeammate : Node
         if (bestTeammate == null) bestTeammate = teammates.First();
 
 
-        sim.CurrentState.LastPasser = bestTeammate; // 어시스트 추적을 위해 다음 볼 핸들러를 LastPasser에 저장
+        sim.CurrentState.PotentialAssister = player; // 패스를 한 선수(player)를 어시스트 후보로 저장
+        sim.CurrentState.LastPasser = bestTeammate; // 공을 받을 선수(bestTeammate)를 다음 볼 핸들러로 저장
         sim.AddLog($"{player.Rating.name} passes to {bestTeammate.Rating.name}.");
         
-        sim.ConsumeTime(UnityEngine.Random.Range(3f, 6f));
+        sim.ConsumeTime(UnityEngine.Random.Range(2f, 5f));
         
         return NodeState.SUCCESS;
     }
@@ -359,9 +415,17 @@ public class Action_TryForced3PointShot : Node
         var shooterRating = sim.GetAdjustedRating(player);
         var defenderRating = sim.GetAdjustedRating(defender);
 
-        // 성공률: 기존 로직에서 10% 페널티 + 수비 가중치(1.35배) 적용
-        float successChance = 30f + (shooterRating.threePointShot - (defenderRating.perimeterDefense * 1.35f)) * 0.8f;
-        successChance = UnityEngine.Mathf.Clamp(successChance, 5f, 85f);
+        // 1. 블락 확률 계산 (압박 상황에서 블락 당할 확률 소폭 증가)
+        float blockChance = (defenderRating.block - 70) * 0.45f;
+        if (Random.Range(0, 100) < blockChance)
+        {
+            sim.ResolveBlock(player, defender);
+            return NodeState.SUCCESS;
+        }
+
+        // 2. 슛 성공률 계산
+        float successChance = 25f + (shooterRating.threePointShot - (defenderRating.perimeterDefense * 1.35f)) * 0.8f;
+        successChance = Mathf.Clamp(successChance, 5f, 75f);
 
         sim.AddLog($"FORCED 3-pointer by {player.Rating.name} over {defender.Rating.name}. Chance: {successChance:F1}%");
 
@@ -372,9 +436,11 @@ public class Action_TryForced3PointShot : Node
             player.Stats.Points += 3;
             player.Stats.FieldGoalsMade++;
             player.Stats.ThreePointersMade++;
-            sim.RecordAssist(sim.CurrentState.LastPasser);
+            sim.RecordAssist(sim.CurrentState.PotentialAssister);
             sim.UpdatePlusMinusOnScore(player.TeamId, 3);
             sim.AddLog("It's good!");
+            string assistText = sim.CurrentState.PotentialAssister != null ? $" (assist by {sim.CurrentState.PotentialAssister.Rating.name})" : "";
+            sim.AddUILog($"FORCED: {player.Rating.name} makes 3-pointer over {defender.Rating.name}{assistText}");
             
             sim.CurrentState.PossessingTeamId = 1 - player.TeamId;
             sim.CurrentState.ShotClockSeconds = 24f;
@@ -383,10 +449,11 @@ public class Action_TryForced3PointShot : Node
         else
         {
             sim.AddLog("It's off the mark.");
+            sim.AddUILog($"FORCED: {player.Rating.name} misses 3-pointer over {defender.Rating.name}");
             sim.ResolveRebound(player);
             sim.CurrentState.LastPasser = null; 
         }
-        sim.ConsumeTime(UnityEngine.Random.Range(4f, 8f));
+        sim.ConsumeTime(UnityEngine.Random.Range(4f, 7f));
         return NodeState.SUCCESS;
     }
 }
@@ -396,23 +463,41 @@ public class Action_TryForcedDrive : Node
     // GamePlayer 타입을 GamaData.cs의 것으로 변경
     public override NodeState Evaluate(IGameSimulator sim, GamePlayer player)
     {
-        player.Stats.FieldGoalsAttempted++;
         var defender = sim.GetRandomDefender(player.TeamId);
         
         var shooterRating = sim.GetAdjustedRating(player);
         var defenderRating = sim.GetAdjustedRating(defender);
 
-        // 파울 확률: 기본 확률 및 파울 유도 능력치 영향력 상향 (12%->18%, 0.8->0.9)
-        float foulChance = 18f + (shooterRating.drawFoul - 70) * 0.9f; // 압박 상황이므로 파울 확률 약간 더 높게
-        if (UnityEngine.Random.Range(0, 100) < foulChance)
+        // 1. 스틸/턴오버 확률 계산
+        float turnoverChance = 4.0f + (defenderRating.steal - shooterRating.ballHandle) * 0.2f;
+        if (Random.Range(0, 100) < turnoverChance)
         {
+            sim.ResolveTurnover(player, defender, true);
+            return NodeState.SUCCESS;
+        }
+        
+        player.Stats.FieldGoalsAttempted++;
+        
+        // 2. 파울 확률
+        float foulChance = 18f + (shooterRating.drawFoul - 70) * 0.9f;
+        if (Random.Range(0, 100) < foulChance)
+        {
+            sim.AddUILog($"FORCED: {defender.Rating.name} commits a shooting foul on {player.Rating.name} ({defender.Stats.Fouls + 1} PF)");
             return sim.ResolveShootingFoul(player, defender, 2);
         }
 
-        // 성공률: 기존 로직에서 10% 페널티 + 수비 가중치(1.4배) 적용
+        // 3. 블락 확률 계산
+        float blockChance = (defenderRating.block - 60) * 0.55f;
+        if (Random.Range(0, 100) < blockChance)
+        {
+            sim.ResolveBlock(player, defender);
+            return NodeState.SUCCESS;
+        }
+
+        // 4. 슛 성공률 계산
         float offensePower = (shooterRating.layup + shooterRating.drivingDunk) / 2f;
-        float successChance = 45f + (offensePower - (defenderRating.interiorDefense * 1.4f)) * 0.9f;
-        successChance = UnityEngine.Mathf.Clamp(successChance, 10f, 85f);
+        float successChance = 40f + (offensePower - (defenderRating.interiorDefense * 1.4f)) * 0.9f;
+        successChance = Mathf.Clamp(successChance, 10f, 80f);
         
         sim.AddLog($"FORCED drive by {player.Rating.name} past {defender.Rating.name}. Chance: {successChance:F1}%");
 
@@ -422,9 +507,11 @@ public class Action_TryForcedDrive : Node
             sim.CurrentState.AwayScore += (player.TeamId == 1) ? 2 : 0;
             player.Stats.Points += 2;
             player.Stats.FieldGoalsMade++;
-            sim.RecordAssist(sim.CurrentState.LastPasser);
+            sim.RecordAssist(sim.CurrentState.PotentialAssister);
             sim.UpdatePlusMinusOnScore(player.TeamId, 2);
             sim.AddLog("Scores!");
+            string assistText = sim.CurrentState.PotentialAssister != null ? $" (assist by {sim.CurrentState.PotentialAssister.Rating.name})" : "";
+            sim.AddUILog($"FORCED: {player.Rating.name} makes 2-point shot against {defender.Rating.name}{assistText}");
 
             sim.CurrentState.PossessingTeamId = 1 - player.TeamId;
             sim.CurrentState.ShotClockSeconds = 24f;
@@ -433,10 +520,11 @@ public class Action_TryForcedDrive : Node
         else
         {
             sim.AddLog("Missed the layup under pressure.");
+            sim.AddUILog($"FORCED: {player.Rating.name} misses 2-point shot against {defender.Rating.name}");
             sim.ResolveRebound(player);
             sim.CurrentState.LastPasser = null;
         }
-        sim.ConsumeTime(UnityEngine.Random.Range(5f, 9f));
+        sim.ConsumeTime(UnityEngine.Random.Range(5f, 8f));
         return NodeState.SUCCESS;
     }
 }
@@ -451,9 +539,17 @@ public class Action_TryForcedMidRangeShot : Node
         var shooterRating = sim.GetAdjustedRating(player);
         var defenderRating = sim.GetAdjustedRating(defender);
 
-        // 성공률: 기존 로직에서 10% 페널티 + 수비 가중치(1.35배) 적용
-        float successChance = 40f + (shooterRating.midRangeShot - (defenderRating.perimeterDefense * 1.35f)) * 0.85f;
-        successChance = UnityEngine.Mathf.Clamp(successChance, 15f, 80f);
+        // 1. 블락 확률 계산
+        float blockChance = (defenderRating.block - 75) * 0.4f;
+        if (Random.Range(0, 100) < blockChance)
+        {
+            sim.ResolveBlock(player, defender);
+            return NodeState.SUCCESS;
+        }
+
+        // 2. 슛 성공률 계산
+        float successChance = 35f + (shooterRating.midRangeShot - (defenderRating.perimeterDefense * 1.35f)) * 0.85f;
+        successChance = Mathf.Clamp(successChance, 15f, 75f);
 
         sim.AddLog($"FORCED mid-range by {player.Rating.name} against {defender.Rating.name}. Chance: {successChance:F1}%");
         
@@ -463,9 +559,11 @@ public class Action_TryForcedMidRangeShot : Node
             sim.CurrentState.AwayScore += (player.TeamId == 1) ? 2 : 0;
             player.Stats.Points += 2;
             player.Stats.FieldGoalsMade++;
-            sim.RecordAssist(sim.CurrentState.LastPasser);
+            sim.RecordAssist(sim.CurrentState.PotentialAssister);
             sim.UpdatePlusMinusOnScore(player.TeamId, 2);
             sim.AddLog("Swish.");
+            string assistText = sim.CurrentState.PotentialAssister != null ? $" (assist by {sim.CurrentState.PotentialAssister.Rating.name})" : "";
+            sim.AddUILog($"FORCED: {player.Rating.name} makes mid-range shot over {defender.Rating.name}{assistText}");
             
             sim.CurrentState.PossessingTeamId = 1 - player.TeamId;
             sim.CurrentState.ShotClockSeconds = 24f;
@@ -474,10 +572,11 @@ public class Action_TryForcedMidRangeShot : Node
         else
         {
             sim.AddLog("Clanks off the rim.");
+            sim.AddUILog($"FORCED: {player.Rating.name} misses mid-range shot over {defender.Rating.name}");
             sim.ResolveRebound(player);
             sim.CurrentState.LastPasser = null;
         }
-        sim.ConsumeTime(UnityEngine.Random.Range(4f, 8f));
+        sim.ConsumeTime(UnityEngine.Random.Range(4f, 7f));
         return NodeState.SUCCESS;
     }
 }
