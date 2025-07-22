@@ -5,14 +5,19 @@ using System.Linq; // Added for .Select() and .ToList()
 
 public class TradeManager : MonoBehaviour
 {
-    // TODO: LocalDbManager 인스턴스 연결
+
     private LocalDbManager _dbManager;
     private SeasonManager _seasonManager;
 
-    void Start()
+    void Awake()
     {
         _dbManager = LocalDbManager.Instance;
-        _seasonManager = FindAnyObjectByType<SeasonManager>();
+        _seasonManager = SeasonManager.Instance;
+    }
+    void Start()
+    {
+        if (_dbManager == null) _dbManager = LocalDbManager.Instance;
+        if (_seasonManager == null) _seasonManager = SeasonManager.Instance;
     }
 
     /// <summary>
@@ -22,8 +27,12 @@ public class TradeManager : MonoBehaviour
     /// <param name="offeredPlayers">제안하는 팀이 내놓는 선수 목록</param>
     /// <param name="targetTeamAbbr">제안받는 팀의 약어</param>
     /// <param name="requestedPlayers">제안받는 팀에게 요구하는 선수 목록</param>
-    /// <returns>트레이드 성공 시 true, 실패 시 false</returns>
-    public bool EvaluateAndExecuteTrade(
+    /// <returns>
+    /// 0: 즉시 수락 (이득인 거래)
+    /// > 0: 요구하는 추가 금액 (달러)
+    /// -1: 거절 (부당한 거래)
+    /// </returns>
+    public int EvaluateAndExecuteTrade(
         string proposingTeamAbbr, List<PlayerRating> offeredPlayers,
         string targetTeamAbbr, List<PlayerRating> requestedPlayers)
     {
@@ -32,80 +41,100 @@ public class TradeManager : MonoBehaviour
         
         long offeredSalary = CalculateTotalSalary(offeredPlayers);
         long requestedSalary = CalculateTotalSalary(requestedPlayers);
+        Debug.Log($"[TradeEval] OfferedPlayers Salary: ${offeredSalary:N0}, RequestedPlayers Salary: ${requestedSalary:N0}");
         
-        // 1. 재정적 타당성 검사
-        long newTeamSalary = targetTeamFinance.CurrentTeamSalary - requestedSalary + offeredSalary;
-        if (newTeamSalary > targetTeamFinance.SalaryCap)
-        {
-            Debug.Log($"[Trade Rejected] Financials: {targetTeamAbbr} would exceed salary cap.");
-            return false;
-        }
-
-        // 2. 팀 필요성 분석
         var targetTeamRoster = _dbManager.GetPlayersByTeam(targetTeamAbbr);
-        float positionBonus = AnalyzeTeamNeeds(targetTeamRoster, offeredPlayers, requestedPlayers);
 
-        // 3. 최종 가치 평가
+        // 1. 팀 필요성 분석
+        float positionValueBonus = AnalyzeTeamNeeds(targetTeamRoster, offeredPlayers, requestedPlayers);
+        Debug.Log($"[TradeEval] Position Value Bonus: ${positionValueBonus:N0}");
+
+        // 2. 최종 가치 평가
         float offeredValue = offeredPlayers.Sum(p => p.currentValue);
         float requestedValue = requestedPlayers.Sum(p => p.currentValue);
+        float finalOfferedValue = offeredValue + positionValueBonus;
+        Debug.Log($"[TradeEval] OfferedValue: ${offeredValue:N0}, RequestedValue: ${requestedValue:N0}, FinalOfferedValue (with bonus): ${finalOfferedValue:N0}");
         
-        float finalOfferedValue = offeredValue + positionBonus;
-
         // 리빌딩 팀은 더 많은 가치를 요구하고, 컨텐딩 팀은 약간의 손해를 감수할 수 있음
         // TODO: SeasonManager로부터 팀 전략(Rebuilding/Contending)을 받아와서 적용
-        float requiredRatio = Random.Range(0.95f, 1.05f); 
+        float requiredRatio = Random.Range(0.95f, 1.2f); // 상대가 요구하는 가치의 범위
+        float adjustedRequestedValue = requestedValue * requiredRatio;
+        float valueDifference = finalOfferedValue - adjustedRequestedValue;
+        Debug.Log($"[TradeEval] RequiredRatio: {requiredRatio:F2}, AdjustedRequestedValue: ${adjustedRequestedValue:N0}, ValueDifference: ${valueDifference:N0}");
 
-        if (finalOfferedValue > requestedValue * requiredRatio)
+        if (valueDifference >= 0)
         {
-            ExecuteTrade(proposingTeamAbbr, offeredPlayers, targetTeamAbbr, requestedPlayers);
-            // TODO: 트레이드 후 팀 재정 정보 업데이트
-            return true;
+            Debug.Log($"[Trade Accepted] Fair Trade. {targetTeamAbbr} accepted the trade.");
+            return 0;
         }
-        else
+
+        // 제안 가치가 요구 가치의 50% 미만이면 협상 불가
+        const float rejectionThreshold = 0.5f;
+        if (finalOfferedValue < adjustedRequestedValue * rejectionThreshold)
         {
-            Debug.Log($"[Trade Rejected] Value: {targetTeamAbbr} declined. " +
-                      $"(Offered Value: {finalOfferedValue:N0}, Requested Value: {requestedValue * requiredRatio:N0})");
-            return false;
+            Debug.Log($"[Trade Rejected] Unfair deal. Offered value is less than {rejectionThreshold * 100}% of requested value.");
+            return -1;
         }
+
+        // 손해보는 거래: 차액을 현금으로 요구
+        long requiredCash = (long)Mathf.Abs(valueDifference);
+        Debug.Log($"[Trade Proposal] {targetTeamAbbr} requests an additional ${requiredCash:N0} to complete the trade.");
+
+        long newTeamSalary = CalculateTotalSalary(targetTeamRoster) - requestedSalary + offeredSalary;
+        Debug.Log($"[TradeEval] {targetTeamAbbr} newTeamSalary after trade: ${newTeamSalary:N0} (Cap: ${targetTeamFinance.TeamBudget:N0})");
+        if (newTeamSalary > targetTeamFinance.TeamBudget + requiredCash)
+        {
+            Debug.Log($"[Trade Rejected] Financials: {targetTeamAbbr} would exceed salary cap.");
+            return -1; // 재정적 타당성 실패
+        }
+
+        return (int)requiredCash; // int로 캐스팅하여 반환
     }
 
     private float AnalyzeTeamNeeds(List<PlayerRating> teamRoster, List<PlayerRating> incomingPlayers, List<PlayerRating> outgoingPlayers)
     {
-        var positionStrengths = new Dictionary<int, float>();
+        float bonus = 0;
+
         for (int i = 1; i <= 5; i++)
         {
+            var currentStrength = 0f;
             var playersInPos = teamRoster.Where(p => p.position == i);
-            positionStrengths[i] = playersInPos.Any() ? (float)playersInPos.Average(p => p.overallAttribute) : 60f;
+            if(playersInPos.Any())
+            {
+                currentStrength = (float)(playersInPos.Sum(p => (p.currentValue / 10000) * (p.currentValue / 10000)) / (float)Mathf.Pow(playersInPos.Count() + 3, 1.5f));
+            }
+
+            var potentialStrength = 0f;
+            var potentialPlayersInPos = teamRoster.Where(p => p.position == i);
+            potentialPlayersInPos = potentialPlayersInPos.Concat(incomingPlayers.Where(p => p.position == i));
+            potentialPlayersInPos = potentialPlayersInPos.Except(outgoingPlayers.Where(p => p.position == i));
+            if(potentialPlayersInPos.Any())
+            {
+                potentialStrength = (float)(potentialPlayersInPos.Sum(p => (p.currentValue / 10000) * (p.currentValue / 10000)) / (float)Mathf.Pow(potentialPlayersInPos.Count() + 3, 1.5f));
+            }
+
+            Debug.Log($"[TradeEval] i: {i}, CurrentStrength: {currentStrength}, PotentialStrength: {potentialStrength}");
+
+            bonus += (potentialStrength - currentStrength) * 10;
         }
-        
-        float bonus = 0;
-        
-        // 받는 선수들이 약점 포지션을 보강해주는가?
-        foreach (var player in incomingPlayers)
-        {
-            // 우리팀의 해당 포지션 평균 OVR보다 높은 선수가 오면 보너스
-            bonus += Mathf.Max(0, player.overallAttribute - positionStrengths[player.position]) * 0.1f; // OVR 1점당 0.1의 가치
-        }
-        
-        // 주는 선수들이 강점 포지션의 선수인가?
-        foreach (var player in outgoingPlayers)
-        {
-            // 우리팀의 해당 포지션 평균 OVR보다 낮은 선수를 내보내면 보너스 (정리 개념)
-            bonus += Mathf.Max(0, positionStrengths[player.position] - player.overallAttribute) * 0.05f;
-        }
-        
+
+        Debug.Log($"[TradeEval] Bonus: {bonus}");
+
         return bonus;
     }
 
     private long CalculateTotalSalary(List<PlayerRating> players)
     {
-        long totalSalary = 0;
+        long totalAnnualSalary = 0;
         foreach (var player in players)
         {
             var status = _dbManager.GetPlayerStatus(player.player_id);
-            if (status != null) totalSalary += status.Salary;
+            if (status != null && status.YearsLeft > 0)
+            {
+                totalAnnualSalary += status.Salary / status.YearsLeft; // 연 단위 연봉으로 합산
+            }
         }
-        return totalSalary;
+        return totalAnnualSalary;
     }
 
     private void ExecuteTrade(string teamA_Abbr, List<PlayerRating> playersFromA, string teamB_Abbr, List<PlayerRating> playersFromB)

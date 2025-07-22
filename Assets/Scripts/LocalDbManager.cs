@@ -95,7 +95,7 @@ public class LocalDbManager : MonoBehaviour
 
         foreach (var p in playerList.players)
         {
-            float currentValue = CalculatePlayerCurrentValue(p.overallAttribute, p.age, p.potential, p.contract_value);
+            float currentValue = CalculatePlayerCurrentValue(p.overallAttribute, p.age, p.potential, (long)(p.contract_value / p.contract_years_left));
             ratings.Add(new PlayerRating
             {
                 player_id = p.player_id,
@@ -199,8 +199,6 @@ public class LocalDbManager : MonoBehaviour
 
         // --- 3. 팀 재정 데이터 처리 ---
         var teamFinances = new List<TeamFinance>();
-        long currentSeasonSalaryCap = 141000000;
-        // team_name → team_abbv 매핑 테이블 구축
         var nameToAbbr = teamList.teams.ToDictionary(t => t.team_name, t => t.team_abbv);
 
         foreach (var teamSalaryPair in teamSalaries)
@@ -214,8 +212,7 @@ public class LocalDbManager : MonoBehaviour
                 Season = 2025, 
                 Standing = 0, // 초기 등수
                 Wins = 0, 
-                Losses = 0, 
-                SalaryCap = currentSeasonSalaryCap, 
+                Losses = 0,
                 CurrentTeamSalary = teamSalaryPair.Value, 
                 TeamBudget = 200000000 
             });
@@ -419,6 +416,12 @@ public class LocalDbManager : MonoBehaviour
         }
     }
 
+    public void UpdateTeamFinance(TeamFinance finance)
+    {
+        if (finance == null) return;
+        Connection.Update(finance);
+    }
+
     #endregion
 
     #region Value Calculation Helpers
@@ -426,20 +429,30 @@ public class LocalDbManager : MonoBehaviour
     // [핵심 수정] 새로운 선수 가치 평가 시스템
     private float CalculatePlayerCurrentValue(int overall, int age, int potential, long salary)
     {
-        // 1. 성과 가치 (Performance Value): OVR이 높을수록 기하급수적으로 증가 (영향력 상향: 2.5f -> 2.8f)
-        float performanceValue = Mathf.Pow(overall / 10f, 3.3f);
+        int factor = 53;
 
-        // 2. 미래 가치 (Potential Value): 나이가 어리고 잠재력이 높을수록 폭발적으로 증가
-        float potentialGap = potential - overall;
-        float ageFactor = Mathf.Max(0, 30 - age) * 0.2f; // 30세 미만일수록 가치 상승
-        float potentialValue = potentialGap * ageFactor * 2.5f;
+        // 1. 성과 가치 (Performance Value): OVR이 높을수록 기하급수적으로 증가
+        float performanceValue = Mathf.Pow((overall - factor), 3f);
+
+        // 2. 미래 가치 (Post Value): 나이가 어리고 잠재력이 높을수록 증가
+        float potentialValue = Mathf.Pow((potential - factor), 1.7f) * 20f;
+        // age가 30일 때 1, 30보다 크면 0, 30보다 작으면 천천히 증가 (예: exp 곡선)
+        float ageFactor;
+        if (age >= 30)
+            ageFactor = (40 - age) / 10f;
+        else
+            ageFactor = (float)(3.0 * Math.Exp(-Math.Log(3.0) * (age - 20.0) / 10.0));
+
+        // age가 30일 때 1, 30보다 작으면 1보다 조금씩 커짐, 30보다 크면 0
+        float postValue = potentialValue * ageFactor;
 
         // 3. 계약 가치 (Contract Value): 적정 연봉 대비 실제 연봉이 얼마나 저렴한가
-        long marketValue = GetMarketValue(overall, age);
-        float contractValue = (float)(marketValue - salary) / 500000f; // 50만 달러당 1점
+        long marketValue = ConvertValueToMarketSalary(performanceValue + postValue);
 
-        float totalValue = performanceValue + potentialValue + contractValue;
-        return Mathf.Max(1.0f, ConvertValueToMarketSalary(totalValue)); // 최소 가치는 1로 보정
+        float contractConstant = 0.2f;
+        float contractValue = (marketValue - salary) * contractConstant;
+
+        return marketValue + contractValue;
     }
 
     /// <summary>
@@ -448,44 +461,16 @@ public class LocalDbManager : MonoBehaviour
     public long ConvertValueToMarketSalary(float currentValue)
     {
         // 기준이 되는 가치와 연봉 범위
-        const float VALUE_MIN = 550f;
-        const float VALUE_MAX = 1660f;
+        const float VALUE_MIN = 5000f;
+        const float VALUE_MAX = 100000f;
         const long SALARY_MIN = 2000000;
         const long SALARY_MAX = 60000000;
 
-        // 가치가 최소보다 낮으면 최소 연봉 반환
-        if (currentValue <= VALUE_MIN) return SALARY_MIN;
-        // 가치가 최대보다 높으면 최대 연봉 반환
-        if (currentValue >= VALUE_MAX) return SALARY_MAX;
-
-        // 두 범위 사이를 선형적으로 비례 계산 (Linear Interpolation)
-        float percentage = (currentValue - VALUE_MIN) / (VALUE_MAX - VALUE_MIN);
-        long salary = SALARY_MIN + (long)(percentage * (SALARY_MAX - SALARY_MIN));
-
-        // 실제 연봉처럼 보이기 위해 만 단위로 반올림
-        return (long)(Mathf.Round(salary / 10000f) * 10000f);
-    }
-
-    // [핵심 수정] 적정 시장 연봉 계산기: OVR과 나이를 모두 고려
-    private long GetMarketValue(int overall, int age)
-    {
-        long baseValue;
-        if (overall >= 95) baseValue = 55000000;
-        else if (overall >= 90) baseValue = 45000000;
-        else if (overall >= 85) baseValue = 35000000;
-        else if (overall >= 80) baseValue = 25000000;
-        else if (overall >= 75) baseValue = 15000000;
-        else if (overall >= 70) baseValue = 8000000;
-        else if (overall >= 65) baseValue = 4000000;
-        else baseValue = 2000000; // 최저 연봉
-
-        // 나이에 따른 가치 조정: 26세 이하 유망주에게는 보너스, 32세 이상 베테랑에게는 페널티
-        if (age <= 22) baseValue = (long)(baseValue * 1.3f);
-        else if (age <= 26) baseValue = (long)(baseValue * 1.15f);
-        else if (age >= 32) baseValue = (long)(baseValue * 0.8f);
-        else if (age >= 35) baseValue = (long)(baseValue * 0.6f);
-
-        return baseValue;
+        // VALUE_MIN일 때 SALARY_MIN, VALUE_MAX일 때 SALARY_MAX가 나오도록 2차함수로 변환합니다.
+        float x = currentValue;
+        float a = (float)(SALARY_MAX - SALARY_MIN) / (VALUE_MAX * VALUE_MAX - VALUE_MIN * VALUE_MIN);
+        long salary = (long)(a * x * x + SALARY_MIN - a * VALUE_MIN * VALUE_MIN);
+        return salary;
     }
     #endregion
 

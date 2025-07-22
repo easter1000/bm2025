@@ -136,6 +136,31 @@ public class SeasonSceneManager : MonoBehaviour
 
     #endregion
 
+    #region Trade Scene Navigation
+
+    private const string TradeTargetKey = "TradeTargetTeamAbbr";
+
+    /// <summary>
+    /// 선택한 상대 팀 약어를 저장한 뒤 TradeScene 으로 이동한다.
+    /// SeasonScene 내부의 다른 UI 요소(예: 일정 셀, 팀 상세 패널 등)에서 호출할 수 있다.
+    /// </summary>
+    /// <param name="opponentAbbr">상대 팀 약어(예: "LAL")</param>
+    public void OpenTradeSceneWithOpponent(string opponentAbbr)
+    {
+        if (string.IsNullOrEmpty(opponentAbbr))
+        {
+            Debug.LogWarning("[SeasonSceneManager] opponentAbbr 가 비어있어 FA로 설정합니다.");
+            opponentAbbr = "FA";
+        }
+
+        // PlayerPrefs 에 저장 후 씬 전환
+        PlayerPrefs.SetString(TradeTargetKey, opponentAbbr);
+        PlayerPrefs.Save();
+        SceneManager.LoadScene("TradeScene");
+    }
+
+    #endregion
+
     /// <summary>
     /// 전달된 패널 하나만 활성화하고 나머지는 모두 비활성화.
     /// null 패널이 전달되면 모든 패널을 비활성화만 합니다.
