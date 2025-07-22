@@ -91,3 +91,11 @@ public struct GameLogEntry
         return $"{TimeStamp} | {Description,-80} | {HomeScore} - {AwayScore}";
     }
 }
+
+// 시뮬레이션 결과를 담는 공통 구조체
+public struct GameResult
+{
+    public int HomeScore;
+    public int AwayScore;
+    public List<PlayerStat> PlayerStats;
+}

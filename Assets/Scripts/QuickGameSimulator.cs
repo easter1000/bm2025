@@ -59,9 +59,5 @@ public class QuickGameSimulator
 }
 
 // 이 구조체는 두 시뮬레이터 모두가 공통으로 사용합니다.
-public struct GameResult
-{
-    public int HomeScore;
-    public int AwayScore;
-    public List<PlayerStat> PlayerStats;
-}
+// >> 이 부분을 GamaData.cs로 이동시킬 것입니다.
+// public struct GameResult ...

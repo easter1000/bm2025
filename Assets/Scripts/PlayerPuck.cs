@@ -9,7 +9,7 @@ public class PlayerPuck : MonoBehaviour
     [SerializeField] private Image playerPhotoImage;
     [SerializeField] private TextMeshProUGUI nameText;
     
-    private GameSimulator.GamePlayer _player;
+    private GamePlayer _player;
     private Button _button;
 
     void Awake()
@@ -23,7 +23,7 @@ public class PlayerPuck : MonoBehaviour
     }
 
     // UIManager가 이 함수를 호출하여 선수 정보를 설정
-    public void Setup(GameSimulator.GamePlayer player)
+    public void Setup(GamePlayer player)
     {
         _player = player;
         
