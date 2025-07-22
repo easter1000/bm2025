@@ -58,7 +58,7 @@ public class BackgroundGameSimulator : IGameSimulator
                 if (timeElapsed > 0)
                 {
                     UpdateAllPlayerStamina(timeElapsed);
-                    UpdatePlayerTime(timeElapsed);
+                    UpdatePlayerTime(timeElapsed); // <<< 출전 시간 기록 호출
 
                     _timeUntilNextSubCheck -= timeElapsed;
                     if (_timeUntilNextSubCheck <= 0)
@@ -191,7 +191,7 @@ public class BackgroundGameSimulator : IGameSimulator
         {
             if (player.IsOnCourt)
             {
-                player.Stats.MinutesPlayedInSeconds += (int)gameTimeDelta;
+                player.Stats.MinutesPlayedInSeconds += gameTimeDelta;
             }
         }
     }
@@ -269,12 +269,12 @@ public class BackgroundGameSimulator : IGameSimulator
         var onCourtAttackers = GetPlayersOnCourt(CurrentState.PossessingTeamId);
         if (onCourtAttackers.Count == 0) return null;
 
-        float totalWeight = onCourtAttackers.Sum(p => Mathf.Pow(p.Rating.overallAttribute, 2.5f));
+        float totalWeight = onCourtAttackers.Sum(p => Mathf.Pow(p.Rating.overallAttribute, 2.0f));
         float randomPoint = UnityEngine.Random.Range(0, totalWeight);
 
         foreach (var player in onCourtAttackers)
         {
-            float weight = Mathf.Pow(player.Rating.overallAttribute, 2.5f);
+            float weight = Mathf.Pow(player.Rating.overallAttribute, 2.0f);
             if (randomPoint < weight) return player;
             randomPoint -= weight;
         }

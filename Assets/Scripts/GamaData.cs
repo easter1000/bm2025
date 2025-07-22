@@ -25,17 +25,25 @@ public class GamePlayer
         return new PlayerStat
         {
             PlayerId = playerId,
+            PlayerName = this.Rating.name, // 이름 추가
+            TeamAbbr = this.Rating.team,   // 팀 약어 추가
             Season = season,
             GameId = gameId,
-            SecondsPlayed = (int)this.Stats.MinutesPlayedInSeconds, // 초를 분으로 변환
+            SecondsPlayed = (int)this.Stats.MinutesPlayedInSeconds,
             Points = this.Stats.Points,
             Assists = this.Stats.Assists,
             Rebounds = this.Stats.OffensiveRebounds + this.Stats.DefensiveRebounds,
             Steals = this.Stats.Steals,
             Blocks = this.Stats.Blocks,
             Turnovers = this.Stats.Turnovers,
+            FieldGoalsMade = this.Stats.FieldGoalsMade,             // 이하 스탯 추가
+            FieldGoalsAttempted = this.Stats.FieldGoalsAttempted,
+            ThreePointersMade = this.Stats.ThreePointersMade,
+            ThreePointersAttempted = this.Stats.ThreePointersAttempted,
+            FreeThrowsMade = this.Stats.FreeThrowsMade,
+            FreeThrowsAttempted = this.Stats.FreeThrowsAttempted,
+            PlusMinus = this.Stats.PlusMinus,
             RecordedAt = System.DateTime.UtcNow.ToString("s")
-            // 필요하다면 PlayerStat DB 모델에 필드를 추가하고 여기서 더 많은 스탯을 매핑할 수 있습니다.
         };
     }
 }
@@ -43,7 +51,7 @@ public class GamePlayer
 // 한 경기에 대한 선수의 실시간 스탯 (DB의 PlayerStat과 구조가 동일)
 public class LivePlayerStats
 {
-    public int MinutesPlayedInSeconds { get; set; }
+    public float MinutesPlayedInSeconds { get; set; } // int -> float으로 변경하여 정확한 시간 누적
     public int Points { get; set; }
     public int Assists { get; set; }
     public int OffensiveRebounds { get; set; }

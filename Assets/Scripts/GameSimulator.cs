@@ -267,8 +267,8 @@ public class GameSimulator : MonoBehaviour, IGameSimulator
         {
             if (player.IsOnCourt)
             {
-                // LivePlayerStats에 출전 시간 기록
-                player.Stats.MinutesPlayedInSeconds += (int)gameTimeDelta;
+                // LivePlayerStats에 출전 시간 기록 (int 캐스팅 제거)
+                player.Stats.MinutesPlayedInSeconds += gameTimeDelta;
             }
         }
     }
@@ -356,12 +356,12 @@ public class GameSimulator : MonoBehaviour, IGameSimulator
         var onCourtAttackers = GetPlayersOnCourt(CurrentState.PossessingTeamId);
         if (onCourtAttackers.Count == 0) return null;
 
-        float totalWeight = onCourtAttackers.Sum(p => Mathf.Pow(p.Rating.overallAttribute, 2.5f));
+        float totalWeight = onCourtAttackers.Sum(p => Mathf.Pow(p.Rating.overallAttribute, 2.0f));
         float randomPoint = UnityEngine.Random.Range(0, totalWeight);
 
         foreach (var player in onCourtAttackers)
         {
-            float weight = Mathf.Pow(player.Rating.overallAttribute, 2.5f);
+            float weight = Mathf.Pow(player.Rating.overallAttribute, 2.0f);
             if (randomPoint < weight) return player;
             randomPoint -= weight;
         }

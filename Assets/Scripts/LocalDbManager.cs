@@ -291,7 +291,7 @@ public class LocalDbManager : MonoBehaviour
     public TeamFinance GetTeamFinance(string teamAbbr, int season) => Connection.Table<TeamFinance>().FirstOrDefault(f => f.TeamAbbr == teamAbbr && f.Season == season);
     public void ClearScheduleTable() { Connection.DropTable<Schedule>(); Connection.CreateTable<Schedule>(); Debug.Log("[DB] Schedule table cleared and recreated."); }
     public void InsertSchedule(List<Schedule> schedule) => Connection.InsertAll(schedule);
-    public List<Schedule> GetGamesForDate(string date) => Connection.Table<Schedule>().Where(g => g.GameDate == date && g.GameStatus == "Scheduled").ToList();
+    public List<Schedule> GetGamesForDate(string date) => Connection.Table<Schedule>().Where(g => g.GameDate == date).ToList();
     public void UpdateGameResult(string gameId, int homeScore, int awayScore)
     {
         var game = Connection.Find<Schedule>(gameId);

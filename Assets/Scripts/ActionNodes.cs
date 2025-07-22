@@ -61,9 +61,14 @@ public class Condition_IsGoodPassOpportunity : Node
     // GamePlayer 타입을 GamaData.cs의 것으로 변경
     public override NodeState Evaluate(IGameSimulator sim, GamePlayer player)
     {
-        // 패스 빈도 현실화: 기본 확률을 45%로 유지
-        float passTendency = 45f; 
+        // 패스 빈도 현실화: 기본 확률을 40%로 약간 하향 조정하여 어시스트 수 감소 유도
+        float passTendency = 40f; 
         passTendency += (player.Rating.passIQ - 80); 
+
+        // [에이스 보정] overallAttribute가 높은 선수는 슛을 더 우선하도록 패스 성향을 감소시킴
+        float overallModifier = (player.Rating.overallAttribute - 85) * 1.5f;
+        passTendency -= Mathf.Max(0, overallModifier);
+
         if (UnityEngine.Random.Range(0, 100) < passTendency) return NodeState.SUCCESS;
         return NodeState.FAILURE;
     }
@@ -173,8 +178,8 @@ public class Action_DriveAndFinish : Node
         var shooterRating = sim.GetAdjustedRating(player);
         var defenderRating = sim.GetAdjustedRating(defender);
 
-        // 파울 확률: 공격자의 파울 유도 능력에 기반하도록 수정하고 기본 확률 추가
-        float foulChance = 10f + (shooterRating.drawFoul - 70) * 0.7f;
+        // 파울 확률: 기본 확률 및 파울 유도 능력치 영향력 상향 (10%->15%, 0.7->0.8)
+        float foulChance = 15f + (shooterRating.drawFoul - 70) * 0.8f;
         if (UnityEngine.Random.Range(0, 100) < foulChance)
         {
             return sim.ResolveShootingFoul(player, defender, 2);
@@ -312,8 +317,25 @@ public class Action_PassToBestTeammate : Node
             sim.CurrentState.LastPasser = null; 
             return NodeState.FAILURE;
         }
+        
+        // OVR 기반 가중치 랜덤으로 패스할 동료 선택
+        float totalWeight = teammates.Sum(p => Mathf.Pow(p.Rating.overallAttribute, 2.0f));
+        float randomPoint = UnityEngine.Random.Range(0, totalWeight);
+        
+        GamePlayer bestTeammate = null;
+        foreach (var teammate in teammates)
+        {
+            float weight = Mathf.Pow(teammate.Rating.overallAttribute, 2.0f);
+            if (randomPoint < weight)
+            {
+                bestTeammate = teammate;
+                break;
+            }
+            randomPoint -= weight;
+        }
+        if (bestTeammate == null) bestTeammate = teammates.First();
 
-        var bestTeammate = teammates.OrderByDescending(p => p.Rating.overallAttribute).First();
+
         sim.CurrentState.LastPasser = bestTeammate; // 어시스트 추적을 위해 다음 볼 핸들러를 LastPasser에 저장
         sim.AddLog($"{player.Rating.name} passes to {bestTeammate.Rating.name}.");
         
@@ -380,8 +402,8 @@ public class Action_TryForcedDrive : Node
         var shooterRating = sim.GetAdjustedRating(player);
         var defenderRating = sim.GetAdjustedRating(defender);
 
-        // 파울 확률: 공격자의 파울 유도 능력에 기반하도록 수정하고 기본 확률 추가
-        float foulChance = 12f + (shooterRating.drawFoul - 70) * 0.8f; // 압박 상황이므로 파울 확률 약간 더 높게
+        // 파울 확률: 기본 확률 및 파울 유도 능력치 영향력 상향 (12%->18%, 0.8->0.9)
+        float foulChance = 18f + (shooterRating.drawFoul - 70) * 0.9f; // 압박 상황이므로 파울 확률 약간 더 높게
         if (UnityEngine.Random.Range(0, 100) < foulChance)
         {
             return sim.ResolveShootingFoul(player, defender, 2);
