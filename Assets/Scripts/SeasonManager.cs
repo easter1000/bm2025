@@ -2,33 +2,48 @@ using UnityEngine;
 using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
+using System;
 
 public class SeasonManager : MonoBehaviour
 {
-    public static SeasonManager Instance { get; private set; }
+    private static SeasonManager _instance;
+    public static SeasonManager Instance
+    {
+        get
+        {
+            if (_instance == null)
+            {
+                _instance = FindObjectOfType<SeasonManager>();
+                if (_instance == null)
+                {
+                    GameObject obj = new GameObject("SeasonManager");
+                    _instance = obj.AddComponent<SeasonManager>();
+                }
+            }
+            return _instance;
+        }
+    }
 
     private LocalDbManager _dbManager;
     private TradeManager _tradeManager;
     
     // 하루가 지나는 시간(초). 실제 게임 시간 기준
-    public float realSecondsPerDay = 1.0f; 
+    // public float realSecondsPerDay = 1.0f; // 더 이상 사용하지 않음
 
-    private int _currentSeason = 2025;
-    private System.DateTime _currentDate;
-    private float _dayTimer = 0f;
+    private int _currentSeason; // 값은 DB에서 로드
+    private System.DateTime _currentDate; // 값은 DB에서 로드
+    // private float _dayTimer = 0f; // 더 이상 사용하지 않음
     private string _userTeamAbbr; // 유저 팀 약어 저장
 
     void Awake()
     {
-        if (Instance != null && Instance != this)
+        if (_instance != null && _instance != this)
         {
             Destroy(gameObject);
+            return;
         }
-        else
-        {
-            Instance = this;
-            DontDestroyOnLoad(gameObject);
-        }
+        _instance = this;
+        DontDestroyOnLoad(gameObject);
     }
 
     void Start()
@@ -39,8 +54,6 @@ public class SeasonManager : MonoBehaviour
         {
             Debug.LogWarning("TradeManager를 찾을 수 없습니다. 트레이드 관련 기능이 비활성화됩니다.");
         }
-
-        _userTeamAbbr = "BOS";
     }
 
     public void InitializeNewSeason(int season, string userTeamAbbr)
@@ -54,35 +67,35 @@ public class SeasonManager : MonoBehaviour
 
     void Update()
     {
-        _dayTimer += Time.deltaTime;
-
-        if (_dayTimer >= realSecondsPerDay)
-        {
-            _dayTimer -= realSecondsPerDay;
-            AdvanceDay();
-        }
+        // 자동 시간 흐름 로직 제거
     }
 
     public int GetCurrentSeason()
     {
-        return _currentSeason;
+        // DB에서 직접 가져오거나, 시작 시점에 로드
+        var user = LocalDbManager.Instance.GetUser();
+        return user?.CurrentSeason ?? DateTime.Now.Year;
+    }
+    
+    public DateTime GetCurrentDate()
+    {
+        var user = LocalDbManager.Instance.GetUser();
+        if (user != null && DateTime.TryParse(user.CurrentDate, out DateTime date))
+        {
+            return date;
+        }
+        return DateTime.Now; // Fallback
     }
 
     private void AdvanceDay()
     {
-        _currentDate = _currentDate.AddDays(1);
-        // Debug.Log($"날짜가 하루 지났습니다. 현재 날짜: {_currentDate.ToShortDateString()}");
-
-        // TODO: 경기 시뮬레이션 로직 호출
-
-        // [수정] 매주 월요일이 아닌, 매일 AI 트레이드 시도
-        AttemptAiToAiTrades();
+        // 자동 시간 흐름 로직 제거
     }
 
     /// <summary>
     /// AI 팀들이 서로 트레이드를 시도하도록 하는 함수
     /// </summary>
-    private void AttemptAiToAiTrades()
+    public void AttemptAiToAiTrades()
     {
         if (_tradeManager == null) return; // TradeManager가 없으면 트레이드 시도 안 함
 
@@ -103,7 +116,7 @@ public class SeasonManager : MonoBehaviour
             for (int j = i + 1; j < aiTeams.Count; j++)
             {
                 // [수정] 트레이드 빈도 상향 (1% -> 4%)
-                if (Random.Range(0, 100) < 25)
+                if (UnityEngine.Random.Range(0, 100) < 25)
                 {
                     ProposeTradeBetweenTeams(aiTeams[i], aiTeams[j], teamFinances);
                 }
@@ -116,7 +129,7 @@ public class SeasonManager : MonoBehaviour
             foreach (var aiTeam in aiTeams)
             {
                 // [수정] 트레이드 빈도 상향 (0.3% -> 1.5%)
-                if (Random.Range(0, 1000) < 15)
+                if (UnityEngine.Random.Range(0, 1000) < 15)
                 {
                     ProposeTradeBetweenTeams(aiTeam, userTeam, teamFinances, true);
                 }
@@ -151,7 +164,7 @@ public class SeasonManager : MonoBehaviour
         var strategyB = GetTeamStrategy(financeB);
 
         // [수정] 동일 전략 팀 간 트레이드 중단 확률을 70% -> 30%로 완화
-        if (strategyA == strategyB && Random.Range(0, 100) < 30) return;
+        if (strategyA == strategyB && UnityEngine.Random.Range(0, 100) < 30) return;
 
         var rosterA = _dbManager.GetPlayersByTeam(teamA.team_abbv);
         var rosterB = _dbManager.GetPlayersByTeam(teamB.team_abbv);
