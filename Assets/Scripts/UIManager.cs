@@ -66,6 +66,19 @@ public class UIManager : MonoBehaviour
         }
     }
 
+    void Start()
+    {
+        // gameSimulator가 Inspector에서 할당되지 않은 경우에만 찾도록 수정
+        if (gameSimulator == null)
+        {
+            gameSimulator = FindFirstObjectByType<GameSimulator>();
+            if (gameSimulator == null)
+            {
+                Debug.LogError("UIManager cannot find GameSimulator!");
+            }
+        }
+    }
+
     void OnEnable()
     {
         GameSimulator.OnGameStateUpdated += UpdateScoreboard;

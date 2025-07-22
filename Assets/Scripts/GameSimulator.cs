@@ -434,7 +434,7 @@ public class GameSimulator : MonoBehaviour, IGameSimulator
 
     #region New Foul Out & Injury Logic
 
-    private void EjectPlayer(GamePlayer player, string reason)
+    public void EjectPlayer(GamePlayer player, string reason)
     {
         player.IsEjected = true;
         player.IsOnCourt = false;
@@ -552,8 +552,8 @@ public class GameSimulator : MonoBehaviour, IGameSimulator
         string teamAbbreviation = "";
         if (eventOwner != null)
         {
-            bool isHomePlayer = _homeTeamRoster.Any(p => p.Rating.player_id == eventOwner.Rating.player_id);
-            teamAbbreviation = isHomePlayer ? _homeTeamRoster.FirstOrDefault(p => p.Rating.player_id == eventOwner.Rating.player_id)?.Rating.team_abbv : _awayTeamRoster.FirstOrDefault(p => p.Rating.player_id == eventOwner.Rating.player_id)?.Rating.team_abbv;
+            // [수정] team_abbv를 PlayerRating이 아닌 CurrentState에 저장된 팀 이름에서 가져옴
+            teamAbbreviation = (eventOwner.TeamId == 0) ? CurrentState.HomeTeamName : CurrentState.AwayTeamName;
         }
 
         OnUILogGenerated?.Invoke($"{timeStamp} | {teamAbbreviation} | {message}");
@@ -568,13 +568,13 @@ public class GameSimulator : MonoBehaviour, IGameSimulator
     
     public NodeState ResolveShootingFoul(GamePlayer shooter, GamePlayer defender, int freeThrows)
     {
-        defender.Stats.Fouls++;
-        if (defender.Stats.Fouls >= 6)
+        defender.Stats.PersonalFouls++; // Fouls -> PersonalFouls
+        if (defender.Stats.PersonalFouls >= 6)
         {
             EjectPlayer(defender, "6 Personal Fouls");
         }
         
-        AddLog($"{defender.Rating.name} commits a shooting foul on {shooter.Rating.name}. ({defender.Stats.Fouls} PF)");
+        AddLog($"{defender.Rating.name} commits a shooting foul on {shooter.Rating.name}. ({defender.Stats.PersonalFouls} PF)"); // Fouls -> PersonalFouls
         
         shooter.Stats.FieldGoalsAttempted++;
         if (freeThrows == 3) shooter.Stats.ThreePointersAttempted++;
@@ -734,115 +734,8 @@ public class GameSimulator : MonoBehaviour, IGameSimulator
         Debug.Log($"--- {teamName} ---");
         foreach (var p in roster.OrderByDescending(p => p.Stats.Points))
         {
-            string line = $"{p.Rating.name}: {p.Stats.Points} PTS, {p.Stats.FieldGoalsMade}/{p.Stats.FieldGoalsAttempted} FG, {p.Stats.DefensiveRebounds+p.Stats.OffensiveRebounds} REB, {p.Stats.Assists} AST, {p.Stats.Fouls} PF";
+            string line = $"{p.Rating.name}: {p.Stats.Points} PTS, {p.Stats.FieldGoalsMade}/{p.Stats.FieldGoalsAttempted} FG, {p.Stats.DefensiveRebounds+p.Stats.OffensiveRebounds} REB, {p.Stats.Assists} AST, {p.Stats.PersonalFouls} PF"; // Fouls -> PersonalFouls
             Debug.Log(line);
-        }
-    }
-    #endregion
-
-    #region GameFlow
-    
-    private void ResolveShootingFoul(GamePlayer shooter, GamePlayer foulPlayer, int freeThrows)
-    {
-        // 파울을 범한 선수의 파울 카운트 증가
-        foulPlayer.LiveStats.PersonalFouls++;
-        AddLog($"{foulPlayer.Rating.name} commits a shooting foul on {shooter.Rating.name} ({foulPlayer.LiveStats.PersonalFouls} PF).");
-        AddUILog($"{foulPlayer.Rating.name} commits a shooting foul. ({foulPlayer.LiveStats.PersonalFouls} PF)", foulPlayer);
-
-        // 6반칙 퇴장 체크
-        if (foulPlayer.LiveStats.PersonalFouls >= 6)
-        {
-            EjectPlayer(foulPlayer, "6 Personal Fouls");
-        }
-
-        CurrentState.Shooter = shooter;
-        CurrentState.FreeThrowsRemaining = freeThrows;
-        CurrentState.IsShootingFreeThrows = true;
-    }
-
-    private void ResolveRebound(GamePlayer originalShooter = null)
-    {
-        ConsumeTime(UnityEngine.Random.Range(2, 5));
-        var allPlayers = GetAllPlayersOnCourt();
-        if (allPlayers.Count == 0) return;
-
-        var reboundScores = new Dictionary<GamePlayer, float>();
-        float totalScore = 0;
-        
-        GamePlayer shooter = originalShooter ?? CurrentState.Shooter;
-        int offensiveTeamId = shooter.TeamId;
-
-        foreach (var p in allPlayers)
-        {
-            var adjustedP = GetAdjustedRating(p);
-            float score = (p.TeamId == offensiveTeamId) ? adjustedP.offensiveRebound : adjustedP.defensiveRebound;
-            score += UnityEngine.Random.Range(1, 20);
-            reboundScores.Add(p, score);
-            totalScore += score;
-        }
-
-        float randomPoint = UnityEngine.Random.Range(0, totalScore);
-        GamePlayer rebounder = reboundScores.FirstOrDefault(kvp => { randomPoint -= kvp.Value; return randomPoint < 0; }).Key;
-        if (rebounder == null) rebounder = allPlayers.FirstOrDefault();
-        
-        if (rebounder.TeamId == offensiveTeamId)
-        {
-            rebounder.Stats.OffensiveRebounds++;
-            AddLog($"{rebounder.Rating.name} grabs the offensive rebound.");
-            AddUILog($"{rebounder.Rating.name} grabs the offensive rebound.", rebounder);
-        }
-        else
-        {
-            rebounder.Stats.DefensiveRebounds++;
-            AddLog($"{rebounder.Rating.name} grabs the defensive rebound.");
-            AddUILog($"{rebounder.Rating.name} grabs the defensive rebound.", rebounder);
-        }
-
-        CurrentState.PossessingTeamId = rebounder.TeamId;
-        CurrentState.ShotClockSeconds = (rebounder.TeamId == offensiveTeamId) ? 14f : 24f;
-        CurrentState.LastPasser = rebounder; 
-        CurrentState.PotentialAssister = null;
-    }
-
-    private void ResolveFreeThrow()
-    {
-        if (CurrentState.Shooter == null) return;
-
-        var stat = CurrentState.Shooter.Stats;
-        var rating = GetAdjustedRating(CurrentState.Shooter);
-        float ftChance = rating.freeThrow;
-
-        if (UnityEngine.Random.Range(0, 100) < ftChance)
-        {
-            stat.FTM++;
-            stat.Points++;
-            UpdatePlusMinusOnScore(CurrentState.Shooter.TeamId, 1);
-            AddUILog($"{CurrentState.Shooter.Rating.name} makes a free throw.", CurrentState.Shooter);
-        }
-        else
-        {
-            AddUILog($"{CurrentState.Shooter.Rating.name} misses a free throw.", CurrentState.Shooter);
-        }
-        
-        CurrentState.PotentialAssister = null;
-        CurrentState.FreeThrowsRemaining--;
-
-        if (CurrentState.FreeThrowsRemaining <= 0)
-        {
-            CurrentState.IsShootingFreeThrows = false;
-            // Last free throw, resolve rebound
-            ResolveRebound();
-        }
-    }
-    
-    #endregion
-    
-    #region GameSimulatorOnly
-    private void UpdateScoreboardUI()
-    {
-        if (UIManager.Instance != null)
-        {
-            UIManager.Instance.UpdateScoreboard(CurrentState);
         }
     }
     #endregion

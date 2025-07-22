@@ -23,15 +23,11 @@ public class SpeedController : MonoBehaviour
 
     void Start()
     {
-        if (gameSimulator == null)
+        // OnGameStateUpdated 이벤트 구독
+        gameSimulator = FindFirstObjectByType<GameSimulator>();
+        if (gameSimulator != null)
         {
-            gameSimulator = FindObjectOfType<GameSimulator>();
-            if (gameSimulator == null)
-            {
-                Debug.LogError("SpeedController cannot find GameSimulator in the scene!");
-                this.enabled = false;
-                return;
-            }
+            GameSimulator.OnGameStateUpdated += UpdateUI;
         }
 
         if (speedText != null)
@@ -44,7 +40,7 @@ public class SpeedController : MonoBehaviour
         fastForwardButton.onClick.AddListener(ToggleSpeed);
 
         ApplySpeed();
-        UpdateUI();
+        UpdateUI(gameSimulator.CurrentState); // 초기 UI 업데이트
     }
 
     void Update()
@@ -63,31 +59,31 @@ public class SpeedController : MonoBehaviour
         }
     }
 
-    private void Play()
+    private void OnDestroy()
+    {
+        // 이벤트 구독 해제
+        if (gameSimulator != null)
+        {
+            GameSimulator.OnGameStateUpdated -= UpdateUI;
+        }
+    }
+
+    public void Play()
     {
         isPaused = false;
         ApplySpeed();
-        UpdateUI();
     }
-
-    private void Pause()
+    
+    public void Pause()
     {
         isPaused = true;
         ApplySpeed();
-        UpdateUI();
     }
-
-    private void ToggleSpeed()
+    
+    public void ToggleSpeed()
     {
-        if (isPaused)
-        {
-            isPaused = false;
-        }
-
         currentSpeedIndex = (currentSpeedIndex + 1) % speedMultipliers.Count;
-        
         ApplySpeed();
-        UpdateUI();
     }
 
     private void ApplySpeed()
@@ -102,11 +98,18 @@ public class SpeedController : MonoBehaviour
         {
             gameSimulator.SimulationSpeed = BASE_SPEED * speedMultipliers[currentSpeedIndex];
         }
+        UpdateUI(gameSimulator.CurrentState); // 속도 변경 시 UI 즉시 업데이트
     }
-
-    private void UpdateUI()
+    
+    // GameState를 매개변수로 받도록 수정
+    private void UpdateUI(GameState currentState)
     {
-        // GameObject를 비활성화하는 대신 버튼의 상호작용 가능 여부를 제어하여 레이아웃이 움직이지 않도록 함
+        if (this == null)
+        {
+            if (gameSimulator != null) GameSimulator.OnGameStateUpdated -= UpdateUI;
+            return;
+        }
+        
         pauseButton.interactable = !isPaused;
         playButton.interactable = isPaused;
 

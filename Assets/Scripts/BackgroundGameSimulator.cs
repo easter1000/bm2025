@@ -95,14 +95,11 @@ public class BackgroundGameSimulator : IGameSimulator
         foreach (var p in allPlayers)
         {
             int minutesPlayed = (int)(p.Stats.MinutesPlayedInSeconds / 60);
-            if (p.IsEjected && p.Stats.Fouls < 6) // 퇴장 사유가 6반칙이 아니면 부상으로 간주
-            {
-                LocalDbManager.Instance.UpdatePlayerAfterGame(p.Rating.player_id, minutesPlayed, true, GenerateInjuryDuration());
-            }
-            else
-            {
-                LocalDbManager.Instance.UpdatePlayerAfterGame(p.Rating.player_id, minutesPlayed, false, 0);
-            }
+            // [수정] 부상으로 인한 퇴장(IsEjected)과 6반칙 퇴장을 명확히 구분
+            bool isInjured = p.IsEjected && p.Stats.PersonalFouls < 6;
+            int injuryDuration = isInjured ? GenerateInjuryDuration() : 0;
+            
+            LocalDbManager.Instance.UpdatePlayerAfterGame(p.Rating.player_id, minutesPlayed, isInjured, injuryDuration);
         }
 
         var finalPlayerStats = allPlayers
@@ -404,7 +401,8 @@ public class BackgroundGameSimulator : IGameSimulator
         // 백그라운드에서는 로그를 출력하지 않음
     }
     
-    public void AddUILog(string message)
+    // IGameSimulator 인터페이스에 맞게 수정
+    public void AddUILog(string message, GamePlayer eventOwner)
     {
         // 백그라운드에서는 UI 로그를 출력하지 않음
     }
@@ -447,8 +445,9 @@ public class BackgroundGameSimulator : IGameSimulator
     
     public NodeState ResolveShootingFoul(GamePlayer shooter, GamePlayer defender, int freeThrows)
     {
-        defender.LiveStats.PersonalFouls++;
-        if (defender.LiveStats.PersonalFouls >= 6)
+        // LiveStats -> Stats 로 수정
+        defender.Stats.PersonalFouls++;
+        if (defender.Stats.PersonalFouls >= 6)
         {
             EjectPlayer(defender, "6 Personal Fouls");
         }
@@ -565,143 +564,4 @@ public class BackgroundGameSimulator : IGameSimulator
 
     #endregion
 
-    #region IGameSimulator_Implementation
-
-    public void AddUILog(string message, GamePlayer eventOwner)
-    {
-        // 백그라운드 시뮬레이터에서는 UI 로그를 출력하지 않음
-    }
-
-    public void ConsumeTime(float seconds)
-    {
-        CurrentState.GameClockSeconds -= seconds;
-        CurrentState.ShotClockSeconds -= seconds;
-    }
-    
-    public GamePlayer GetRandomDefender(int attackingTeamId)
-    {
-        var defenders = GetPlayersOnCourt(1 - attackingTeamId);
-        if (defenders.Count == 0) return null;
-        return defenders[UnityEngine.Random.Range(0, defenders.Count)];
-    }
-    
-    public NodeState ResolveShootingFoul(GamePlayer shooter, GamePlayer defender, int freeThrows)
-    {
-        defender.LiveStats.PersonalFouls++;
-        if (defender.LiveStats.PersonalFouls >= 6)
-        {
-            EjectPlayer(defender, "6 Personal Fouls");
-        }
-
-        shooter.Stats.FieldGoalsAttempted++;
-        if (freeThrows == 3) shooter.Stats.ThreePointersAttempted++;
-        
-        var freeThrowAction = new Action_ShootFreeThrows(shooter, freeThrows);
-        return freeThrowAction.Evaluate(this, shooter); 
-    }
-
-    public void ResolveRebound(GamePlayer shooter)
-    {
-        ConsumeTime(UnityEngine.Random.Range(2, 5));
-        var allPlayers = GetAllPlayersOnCourt();
-        var reboundScores = new Dictionary<GamePlayer, float>();
-        float totalScore = 0;
-
-        foreach (var p in allPlayers)
-        {
-            var adjustedP = GetAdjustedRating(p);
-            float score = (p.TeamId == shooter.TeamId) ? adjustedP.offensiveRebound : adjustedP.defensiveRebound;
-            score += UnityEngine.Random.Range(1, 20);
-            reboundScores.Add(p, score);
-            totalScore += score;
-        }
-
-        float randomPoint = UnityEngine.Random.Range(0, totalScore);
-        GamePlayer rebounder = reboundScores.FirstOrDefault(p => { randomPoint -= p.Value; return randomPoint < 0; }).Key;
-        if (rebounder == null) rebounder = allPlayers.FirstOrDefault();
-
-        if (rebounder.TeamId == shooter.TeamId)
-        {
-            rebounder.Stats.OffensiveRebounds++;
-            CurrentState.ShotClockSeconds = 14f;
-            CurrentState.PossessingTeamId = rebounder.TeamId;
-            CurrentState.LastPasser = rebounder;
-        }
-        else
-        {
-            rebounder.Stats.DefensiveRebounds++;
-            CurrentState.PossessingTeamId = rebounder.TeamId;
-            CurrentState.ShotClockSeconds = 24f;
-            CurrentState.LastPasser = null;
-        }
-    }
-
-    public void ResolveTurnover(GamePlayer offensivePlayer, GamePlayer defensivePlayer, bool isSteal)
-    {
-        offensivePlayer.Stats.Turnovers++;
-        if (isSteal)
-        {
-            defensivePlayer.Stats.Steals++;
-        }
-        CurrentState.PossessingTeamId = 1 - offensivePlayer.TeamId;
-        CurrentState.ShotClockSeconds = 24f;
-        CurrentState.LastPasser = null;
-        CurrentState.PotentialAssister = null;
-    }
-
-    public void ResolveBlock(GamePlayer shooter, GamePlayer blocker)
-    {
-        blocker.Stats.Blocks++;
-        ResolveRebound(shooter);
-    }
-
-    public void EjectPlayer(GamePlayer player, string reason)
-    {
-        player.IsEjected = true;
-        player.IsOnCourt = false;
-
-        var teamRoster = (player.TeamId == 0) ? _homeTeamRoster : _awayTeamRoster;
-        var substitute = FindBestSubstitute(teamRoster, player, false);
-        
-        if (substitute != null)
-        {
-            PerformSubstitution(player, substitute);
-        }
-    }
-
-    private void CheckForInjuries()
-    {
-        foreach (var player in GetAllPlayersOnCourt())
-        {
-            float injuryPossibility = player.Rating.injury * (100f - player.CurrentStamina) / 5f / 48f;
-            if (UnityEngine.Random.Range(0f, 100f) < injuryPossibility)
-            {
-                EjectPlayer(player, "Injury");
-                break;
-            }
-        }
-    }
-
-    private int GenerateInjuryDuration()
-    {
-        float rand = UnityEngine.Random.Range(0f, 1f);
-        if (rand < 0.82f) return UnityEngine.Random.Range(1, 8);
-        else if (rand < 0.97f) return UnityEngine.Random.Range(8, 31);
-        else return UnityEngine.Random.Range(31, 179);
-    }
-
-    private void RecalculateEffectiveOverall(GamePlayer player)
-    {
-        var adjustedRating = GetAdjustedRating(player);
-        int effectiveOvr = (
-            adjustedRating.closeShot + adjustedRating.midRangeShot + adjustedRating.threePointShot +
-            adjustedRating.drivingDunk + adjustedRating.layup + adjustedRating.freeThrow +
-            adjustedRating.interiorDefense + adjustedRating.perimeterDefense + adjustedRating.steal + adjustedRating.block +
-            adjustedRating.speed + adjustedRating.passIQ + adjustedRating.ballHandle +
-            adjustedRating.offensiveRebound + adjustedRating.defensiveRebound
-        ) / 15;
-        player.EffectiveOverall = effectiveOvr;
-    }
-
-    #endregion
 } 

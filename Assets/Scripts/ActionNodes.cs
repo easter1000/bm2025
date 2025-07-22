@@ -160,7 +160,7 @@ public class Action_Try3PointShot : Node
             sim.UpdatePlusMinusOnScore(player.TeamId, 3);
             sim.AddLog("It's good!");
             string assistText = sim.CurrentState.PotentialAssister != null ? $" (assist by {sim.CurrentState.PotentialAssister.Rating.name})" : "";
-            sim.AddUILog($"{player.Rating.name} makes 3-pointer over {defender.Rating.name}{assistText}");
+            sim.AddUILog($"{player.Rating.name} makes 3-pointer over {defender.Rating.name}{assistText}", player);
             
             sim.CurrentState.PossessingTeamId = 1 - player.TeamId;
             sim.CurrentState.ShotClockSeconds = 24f;
@@ -169,7 +169,7 @@ public class Action_Try3PointShot : Node
         else
         {
             sim.AddLog("It's off the mark.");
-            sim.AddUILog($"{player.Rating.name} misses 3-pointer over {defender.Rating.name}");
+            sim.AddUILog($"{player.Rating.name} misses 3-pointer over {defender.Rating.name}", player);
             sim.ResolveRebound(player);
             sim.CurrentState.LastPasser = null; 
         }
@@ -202,7 +202,7 @@ public class Action_DriveAndFinish : Node
         float foulChance = 15f + (shooterRating.drawFoul - 70) * 0.8f;
         if (Random.Range(0, 100) < foulChance)
         {
-            sim.AddUILog($"{defender.Rating.name} commits a shooting foul on {player.Rating.name} ({defender.Stats.Fouls + 1} PF)");
+            sim.AddUILog($"{defender.Rating.name} commits a shooting foul on {player.Rating.name} ({defender.Stats.PersonalFouls + 1} PF)", defender);
             return sim.ResolveShootingFoul(player, defender, 2);
         }
 
@@ -231,7 +231,7 @@ public class Action_DriveAndFinish : Node
             sim.UpdatePlusMinusOnScore(player.TeamId, 2);
             sim.AddLog("Scores!");
             string assistText = sim.CurrentState.PotentialAssister != null ? $" (assist by {sim.CurrentState.PotentialAssister.Rating.name})" : "";
-            sim.AddUILog($"{player.Rating.name} makes 2-point shot against {defender.Rating.name}{assistText}");
+            sim.AddUILog($"{player.Rating.name} makes 2-point shot against {defender.Rating.name}{assistText}", player);
 
             sim.CurrentState.PossessingTeamId = 1 - player.TeamId;
             sim.CurrentState.ShotClockSeconds = 24f;
@@ -240,7 +240,7 @@ public class Action_DriveAndFinish : Node
         else
         {
             sim.AddLog("Missed the layup under pressure.");
-            sim.AddUILog($"{player.Rating.name} misses 2-point shot against {defender.Rating.name}");
+            sim.AddUILog($"{player.Rating.name} misses 2-point shot against {defender.Rating.name}", player);
             sim.ResolveRebound(player);
             sim.CurrentState.LastPasser = null;
         }
@@ -284,7 +284,7 @@ public class Action_TryMidRangeShot : Node
             sim.UpdatePlusMinusOnScore(player.TeamId, 2);
             sim.AddLog("Swish.");
             string assistText = sim.CurrentState.PotentialAssister != null ? $" (assist by {sim.CurrentState.PotentialAssister.Rating.name})" : "";
-            sim.AddUILog($"{player.Rating.name} makes mid-range shot over {defender.Rating.name}{assistText}");
+            sim.AddUILog($"{player.Rating.name} makes mid-range shot over {defender.Rating.name}{assistText}", player);
             
             sim.CurrentState.PossessingTeamId = 1 - player.TeamId;
             sim.CurrentState.ShotClockSeconds = 24f;
@@ -293,7 +293,7 @@ public class Action_TryMidRangeShot : Node
         else
         {
             sim.AddLog("Clanks off the rim.");
-            sim.AddUILog($"{player.Rating.name} misses mid-range shot over {defender.Rating.name}");
+            sim.AddUILog($"{player.Rating.name} misses mid-range shot over {defender.Rating.name}", player);
             sim.ResolveRebound(player);
             sim.CurrentState.LastPasser = null;
         }
@@ -327,7 +327,7 @@ public class Action_ShootFreeThrows : Node
             }
         }
         
-        sim.AddUILog($"{_shooter.Rating.name} makes {made} of {_attempts} free throws");
+        sim.AddUILog($"{_shooter.Rating.name} makes {made} of {_attempts} free throws", _shooter);
         
         if (made > 0)
         {
@@ -440,7 +440,7 @@ public class Action_TryForced3PointShot : Node
             sim.UpdatePlusMinusOnScore(player.TeamId, 3);
             sim.AddLog("It's good!");
             string assistText = sim.CurrentState.PotentialAssister != null ? $" (assist by {sim.CurrentState.PotentialAssister.Rating.name})" : "";
-            sim.AddUILog($"FORCED: {player.Rating.name} makes 3-pointer over {defender.Rating.name}{assistText}");
+            sim.AddUILog($"FORCED: {player.Rating.name} makes 3-pointer over {defender.Rating.name}{assistText}", player);
             
             sim.CurrentState.PossessingTeamId = 1 - player.TeamId;
             sim.CurrentState.ShotClockSeconds = 24f;
@@ -449,7 +449,7 @@ public class Action_TryForced3PointShot : Node
         else
         {
             sim.AddLog("It's off the mark.");
-            sim.AddUILog($"FORCED: {player.Rating.name} misses 3-pointer over {defender.Rating.name}");
+            sim.AddUILog($"FORCED: {player.Rating.name} misses 3-pointer over {defender.Rating.name}", player);
             sim.ResolveRebound(player);
             sim.CurrentState.LastPasser = null; 
         }
@@ -482,7 +482,7 @@ public class Action_TryForcedDrive : Node
         float foulChance = 18f + (shooterRating.drawFoul - 70) * 0.9f;
         if (Random.Range(0, 100) < foulChance)
         {
-            sim.AddUILog($"FORCED: {defender.Rating.name} commits a shooting foul on {player.Rating.name} ({defender.Stats.Fouls + 1} PF)");
+            sim.AddUILog($"FORCED: {defender.Rating.name} commits a shooting foul on {player.Rating.name} ({defender.Stats.PersonalFouls + 1} PF)", defender);
             return sim.ResolveShootingFoul(player, defender, 2);
         }
 
@@ -511,7 +511,7 @@ public class Action_TryForcedDrive : Node
             sim.UpdatePlusMinusOnScore(player.TeamId, 2);
             sim.AddLog("Scores!");
             string assistText = sim.CurrentState.PotentialAssister != null ? $" (assist by {sim.CurrentState.PotentialAssister.Rating.name})" : "";
-            sim.AddUILog($"FORCED: {player.Rating.name} makes 2-point shot against {defender.Rating.name}{assistText}");
+            sim.AddUILog($"FORCED: {player.Rating.name} makes 2-point shot against {defender.Rating.name}{assistText}", player);
 
             sim.CurrentState.PossessingTeamId = 1 - player.TeamId;
             sim.CurrentState.ShotClockSeconds = 24f;
@@ -520,7 +520,7 @@ public class Action_TryForcedDrive : Node
         else
         {
             sim.AddLog("Missed the layup under pressure.");
-            sim.AddUILog($"FORCED: {player.Rating.name} misses 2-point shot against {defender.Rating.name}");
+            sim.AddUILog($"FORCED: {player.Rating.name} misses 2-point shot against {defender.Rating.name}", player);
             sim.ResolveRebound(player);
             sim.CurrentState.LastPasser = null;
         }
@@ -563,7 +563,7 @@ public class Action_TryForcedMidRangeShot : Node
             sim.UpdatePlusMinusOnScore(player.TeamId, 2);
             sim.AddLog("Swish.");
             string assistText = sim.CurrentState.PotentialAssister != null ? $" (assist by {sim.CurrentState.PotentialAssister.Rating.name})" : "";
-            sim.AddUILog($"FORCED: {player.Rating.name} makes mid-range shot over {defender.Rating.name}{assistText}");
+            sim.AddUILog($"FORCED: {player.Rating.name} makes mid-range shot over {defender.Rating.name}{assistText}", player);
             
             sim.CurrentState.PossessingTeamId = 1 - player.TeamId;
             sim.CurrentState.ShotClockSeconds = 24f;
@@ -572,7 +572,7 @@ public class Action_TryForcedMidRangeShot : Node
         else
         {
             sim.AddLog("Clanks off the rim.");
-            sim.AddUILog($"FORCED: {player.Rating.name} misses mid-range shot over {defender.Rating.name}");
+            sim.AddUILog($"FORCED: {player.Rating.name} misses mid-range shot over {defender.Rating.name}", player);
             sim.ResolveRebound(player);
             sim.CurrentState.LastPasser = null;
         }

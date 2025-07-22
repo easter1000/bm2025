@@ -56,7 +56,7 @@ public class GamePlayer
             ThreePointersAttempted = this.Stats.ThreePointersAttempted,
             FreeThrowsMade = this.Stats.FreeThrowsMade,
             FreeThrowsAttempted = this.Stats.FreeThrowsAttempted,
-            PersonalFouls = this.Stats.Fouls, // 파울 기록 추가
+            PersonalFouls = this.Stats.PersonalFouls, // 파울 기록 추가
             PlusMinus = this.Stats.PlusMinus,
             RecordedAt = System.DateTime.UtcNow.ToString("s")
         };
