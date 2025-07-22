@@ -11,6 +11,7 @@ public class TeamItemUI : MonoBehaviour
     [Header("Texts")]
     [SerializeField] private TextMeshProUGUI txtTeamName;
     [SerializeField] private TextMeshProUGUI txtAbbreviation;
+    [SerializeField] private Image teamColor;
 
     [Header("Logo")]
     [SerializeField] private Image imgTeamLogo;
@@ -62,6 +63,11 @@ public class TeamItemUI : MonoBehaviour
             }
             imgTeamLogo.sprite = logo;
             imgTeamLogo.preserveAspect = true;
+        }
+
+        if (teamColor != null)
+        {
+            teamColor.color = data.teamColor;
         }
 
         // -------------- Starting Players --------------
