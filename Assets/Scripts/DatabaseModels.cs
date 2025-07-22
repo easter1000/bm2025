@@ -146,3 +146,13 @@ public class TradeEvaluationResult
     public long RequiredCash { get; set; }
     public float ValueDifference { get; set; } // 제안팀 입장에서의 가치 차이. 양수일수록 이득.
 }
+
+/// <summary>
+/// PlayerRating과 PlayerStatus 정보를 함께 담는 래퍼 클래스.
+/// DB 테이블이 아님.
+/// </summary>
+public class PlayerInfo
+{
+    public PlayerRating Rating { get; set; }
+    public PlayerStatus Status { get; set; }
+}

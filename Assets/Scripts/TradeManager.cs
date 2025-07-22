@@ -32,7 +32,7 @@ public class TradeManager : MonoBehaviour
     /// > 0: 요구하는 추가 금액 (달러)
     /// -1: 거절 (부당한 거래)
     /// </returns>
-    public int EvaluateAndExecuteTrade(
+    public TradeEvaluationResult EvaluateTrade(
         string proposingTeamAbbr, List<PlayerRating> offeredPlayers,
         string targetTeamAbbr, List<PlayerRating> requestedPlayers)
     {
@@ -64,20 +64,28 @@ public class TradeManager : MonoBehaviour
 
         // 손해보는 거래: 차액을 현금으로 요구
         long requiredCash = (long)Mathf.Abs(valueDifference);
-        Debug.Log($"[Trade Proposal] {targetTeamAbbr} requests an additional ${requiredCash:N0} to complete the trade.");
+        
+        var result = new TradeEvaluationResult
+        {
+            IsAccepted = false,
+            RequiredCash = requiredCash,
+            ValueDifference = valueDifference
+        };
 
         long newTeamSalary = CalculateTotalSalary(targetTeamRoster) - requestedSalary + offeredSalary;
         Debug.Log($"[TradeEval] {targetTeamAbbr} newTeamSalary after trade: ${newTeamSalary:N0} (Cap: ${targetTeamFinance.TeamBudget:N0})");
         if (newTeamSalary > targetTeamFinance.TeamBudget + requiredCash)
         {
             Debug.Log($"[Trade Rejected] Financials: {targetTeamAbbr} would exceed salary cap.");
-            return -1; // 재정적 타당성 실패
+            return result; // 재정적 타당성 실패
         }
 
         if (valueDifference >= 0)
         {
             Debug.Log($"[Trade Accepted] Fair Trade. {targetTeamAbbr} accepted the trade.");
-            return 0;
+            result.IsAccepted = true;
+            result.RequiredCash = 0;
+            return result;
         }
 
         // 제안 가치가 요구 가치의 50% 미만이면 협상 불가
@@ -85,10 +93,11 @@ public class TradeManager : MonoBehaviour
         if (finalOfferedValue < adjustedRequestedValue * rejectionThreshold)
         {
             Debug.Log($"[Trade Rejected] Unfair deal. Offered value is less than {rejectionThreshold * 100}% of requested value.");
-            return -1;
+            return result;
         }
-
-        return (int)requiredCash; // int로 캐스팅하여 반환
+        
+        result.IsAccepted = true; // 협상 가능
+        return result;
     }
 
     private float AnalyzeTeamNeeds(List<PlayerRating> teamRoster, List<PlayerRating> incomingPlayers, List<PlayerRating> outgoingPlayers)
@@ -137,7 +146,7 @@ public class TradeManager : MonoBehaviour
         return totalAnnualSalary;
     }
 
-    private void ExecuteTrade(string teamA_Abbr, List<PlayerRating> playersFromA, string teamB_Abbr, List<PlayerRating> playersFromB)
+    public void ExecuteTrade(string teamA_Abbr, List<PlayerRating> playersFromA, string teamB_Abbr, List<PlayerRating> playersFromB)
     {
         _dbManager.UpdatePlayerTeam(playersFromA.Select(p => p.player_id).ToList(), teamB_Abbr);
         _dbManager.UpdatePlayerTeam(playersFromB.Select(p => p.player_id).ToList(), teamA_Abbr);

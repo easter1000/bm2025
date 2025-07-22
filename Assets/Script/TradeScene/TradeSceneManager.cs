@@ -315,40 +315,47 @@ public class TradeSceneManager : MonoBehaviour
             return;
         }
 
-        int result = tradeManager.EvaluateAndExecuteTrade(myTeamAbbr, mySelectedPlayers, oppTeamAbbr, oppSelectedPlayers);
+        // 4. 트레이드 평가
+        var result = tradeManager.EvaluateTrade(
+            myTeamAbbr, mySelectedPlayers,
+            oppTeamAbbr, oppSelectedPlayers
+        );
 
-        if (result == -1)
+        // 5. 결과 처리
+        if (result.IsAccepted && result.RequiredCash == 0)
         {
-            confirmDialog.Show("상대 팀이 제안을 거절했습니다.", () => { }, null);
+            // 즉시 수락
+            confirmDialog.Show("트레이드 제안이 수락되었습니다!", () => FinalizeTrade(mySelectedPlayers, oppSelectedPlayers, 0), () => {});
         }
-        else if (result == 0)
+        else if (result.IsAccepted)
         {
-            confirmDialog.Show("상대 팀이 흔쾌히 제안을 수락했습니다.\n트레이드를 진행하시겠습니까?",
-                () => ExecuteTrade(mySelectedPlayers, oppSelectedPlayers, 0),
-                () => { });
-        }
-        else
-        {
-            long requiredCash = result;
-            string message = $"상대 팀이 추가로 ${requiredCash:N0}을 요구합니다.\n지불하고 트레이드를 진행하시겠습니까?";
+            // 추가 금액 요구
+            string message = $"상대 팀이 트레이드를 위해 추가로 ${result.RequiredCash:N0}를 요구합니다. 수락하시겠습니까?";
             confirmDialog.Show(message,
-                () =>
+                onYes: () =>
                 {
                     var myFinance = LocalDbManager.Instance.GetTeamFinance(myTeamAbbr, 2025);
-                    if (myFinance.TeamBudget < requiredCash)
+                    if (myFinance.TeamBudget >= result.RequiredCash)
                     {
-                        confirmDialog.Show("예산이 부족하여 트레이드를 진행할 수 없습니다.", () => { }, null);
+                        // TODO: 예산 차감 로직 추가
+                        FinalizeTrade(mySelectedPlayers, oppSelectedPlayers, result.RequiredCash);
                     }
                     else
                     {
-                        ExecuteTrade(mySelectedPlayers, oppSelectedPlayers, requiredCash);
+                        confirmDialog.Show("예산이 부족하여 추가 금액을 지불할 수 없습니다.", () => {}, () => {});
                     }
                 },
-                () => { });
+                onNo: () => { }
+            );
+        }
+        else
+        {
+            // 거절
+            confirmDialog.Show("트레이드 제안이 거절되었습니다.", () => { }, null);
         }
     }
 
-    private void ExecuteTrade(List<PlayerRating> myPlayers, List<PlayerRating> oppPlayers, long cashPaid)
+    private void FinalizeTrade(List<PlayerRating> myPlayers, List<PlayerRating> oppPlayers, long cashPaid)
     {
         // 1. 선수 팀 정보 업데이트
         var db = LocalDbManager.Instance;
@@ -356,10 +363,10 @@ public class TradeSceneManager : MonoBehaviour
         db.UpdatePlayerTeam(oppPlayers.Select(p => p.player_id).ToList(), myTeamAbbr);
 
         // 2. 재정 정보 업데이트
-        if (cashPaid > 0)
+        if (cashPaid > 0) // result.RequiredCash 사용
         {
             var myFinance = db.GetTeamFinance(myTeamAbbr, 2025);
-            myFinance.TeamBudget -= cashPaid;
+            myFinance.TeamBudget -= cashPaid; // result.RequiredCash 사용
             db.UpdateTeamFinance(myFinance);
         }
 

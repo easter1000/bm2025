@@ -100,21 +100,15 @@ public class SeasonSceneManager : MonoBehaviour
             message,
             onYes: () => {
                 // '예'를 눌렀을 때: 트레이드 실행
-                bool success = _tradeManager.ExecuteTrade(
+                _tradeManager.ExecuteTrade(
                     offer.ProposingTeam.team_abbv, offer.PlayersOfferedByProposingTeam,
                     offer.TargetTeam.team_abbv, offer.PlayersRequestedFromTargetTeam
                 );
 
-                if (success)
-                {
-                    Debug.Log("트레이드가 성공적으로 성사되었습니다!");
-                    UpdateHeaderUI(); // 예산 등 정보 업데이트
-                    // TODO: 팀 관리 패널 등 다른 UI도 새로고침 필요
-                }
-                else
-                {
-                    Debug.Log("트레이드가 실패했습니다.");
-                }
+                // 트레이드 성공 후 후속 처리
+                Debug.Log("트레이드가 성공적으로 성사되었습니다!");
+                UpdateHeaderUI(); // 예산 등 정보 업데이트
+                // TODO: 팀 관리 패널 등 다른 UI도 새로고침 필요
             },
             onNo: () => {
                 // '아니오'를 눌렀을 때: 아무것도 안 함

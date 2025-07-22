@@ -340,15 +340,15 @@ public class LocalDbManager : MonoBehaviour
     public PlayerRating GetPlayerRating(int playerId) => Connection.Find<PlayerRating>(playerId);
     public List<PlayerRating> GetAllPlayerRatings() => Connection.Table<PlayerRating>().ToList();
     // 팀 약어(예: "DAL") 또는 전체 팀명("Dallas Mavericks") 어느 쪽이든 받아서 해당 팀 선수 목록을 반환합니다.
-    public List<PlayerRating> GetPlayersByTeam(string teamIdentifier)
+    public List<PlayerRating> GetPlayersByTeam(string teamAbbr)
     {
         // 먼저 Team 테이블에서 매칭되는 엔티티를 찾아 전체 이름과 약어를 모두 확보합니다.
-        Team teamEntity = Connection.Table<Team>().FirstOrDefault(t => t.team_abbv == teamIdentifier || t.team_name == teamIdentifier);
+        Team teamEntity = Connection.Table<Team>().FirstOrDefault(t => t.team_abbv == teamAbbr || t.team_name == teamAbbr);
 
         if (teamEntity == null)
         {
             // Team 테이블에 없으면 식별자를 그대로 사용하여 검색합니다.
-            return Connection.Table<PlayerRating>().Where(p => p.team == teamIdentifier).ToList();
+            return Connection.Table<PlayerRating>().Where(p => p.team == teamAbbr).ToList();
         }
 
         string fullName = teamEntity.team_name;
@@ -359,6 +359,30 @@ public class LocalDbManager : MonoBehaviour
         return Connection.Table<PlayerRating>()
                  .Where(p => p.team == fullName || p.team == abbr)
                  .ToList();
+    }
+
+    /// <summary>
+    /// 특정 팀의 모든 선수 정보(Rating + Status)를 가져온다.
+    /// </summary>
+    public List<PlayerInfo> GetPlayersByTeamWithStatus(string teamAbbr)
+    {
+        var ratings = GetPlayersByTeam(teamAbbr);
+        var playerInfos = new List<PlayerInfo>();
+
+        foreach (var rating in ratings)
+        {
+            var status = GetPlayerStatus(rating.player_id);
+            if (status != null)
+            {
+                playerInfos.Add(new PlayerInfo { Rating = rating, Status = status });
+            }
+        }
+        return playerInfos;
+    }
+
+    public List<PlayerRating> GetFreeAgents()
+    {
+        return Connection.Table<PlayerRating>().Where(p => p.team == "FA").ToList();
     }
 
     public PlayerStatus GetPlayerStatus(int playerId)

@@ -192,44 +192,65 @@ public class SeasonManager : MonoBehaviour
         // 예산에 여유가 있는 팀 찾기
         var potentialPartners = finances.Where(f => f.Value.CurrentTeamSalary < f.Value.TeamBudget && f.Key != overBudgetTeam.team_abbv && f.Key != _userTeamAbbr)
                                         .ToList();
+        
+        BestTradeOption bestTrade = null;
 
-        foreach (var myPlayer in sortedRoster)
+        foreach (var myPlayerInfo in sortedRoster)
         {
-            if (myPlayer.Status.Salary == 0) continue;
+            if (myPlayerInfo.Status.Salary == 0) continue;
+            long myAnnualSalary = myPlayerInfo.Status.Salary / myPlayerInfo.Status.YearsLeft;
 
             foreach (var partnerEntry in potentialPartners)
             {
                 var partnerTeam = _dbManager.GetTeam(partnerEntry.Key);
                 var partnerRoster = _dbManager.GetPlayersByTeamWithStatus(partnerTeam.team_abbv);
 
-                // 상대팀에서는 저연봉 선수 찾기
-                var theirPlayer = partnerRoster.OrderBy(p => p.Status.Salary).FirstOrDefault();
-                
-                if (theirPlayer == null) continue;
-
-                // 연봉 차이가 커야 트레이드 의미가 있음
-                if (myPlayer.Status.Salary > theirPlayer.Status.Salary)
+                foreach (var theirPlayerInfo in partnerRoster)
                 {
-                    Debug.Log($"[Salary Cap Trade] Attempting: {overBudgetTeam.team_abbv} gives {myPlayer.Rating.name}(${myPlayer.Status.Salary:N0}) for {partnerTeam.team_abbv}'s {theirPlayer.Rating.name}(${theirPlayer.Status.Salary:N0})");
+                    long theirAnnualSalary = (theirPlayerInfo.Status.YearsLeft > 0) ? (theirPlayerInfo.Status.Salary / theirPlayerInfo.Status.YearsLeft) : 0;
+                    long salaryChange = theirAnnualSalary - myAnnualSalary;
+
+                    // 연봉 절감 효과가 없으면 이 트레이드는 고려하지 않음
+                    if (salaryChange >= 0) continue;
                     
-                    bool success = _tradeManager.EvaluateAndExecuteTrade(
-                        overBudgetTeam.team_abbv, new List<PlayerRating>{ myPlayer.Rating },
-                        partnerTeam.team_abbv, new List<PlayerRating>{ theirPlayer.Rating }
+                    var result = _tradeManager.EvaluateTrade(
+                        overBudgetTeam.team_abbv, new List<PlayerRating> { myPlayerInfo.Rating },
+                        partnerTeam.team_abbv, new List<PlayerRating> { theirPlayerInfo.Rating }
                     );
 
-                    if (success)
+                    if (result.IsAccepted && (bestTrade == null || salaryChange < bestTrade.SalaryChange))
                     {
-                        Debug.Log("[Salary Cap Trade] Success!");
-                        // 재정 정보 즉시 업데이트
-                        finances[overBudgetTeam.team_abbv].CurrentTeamSalary -= (myPlayer.Status.Salary - theirPlayer.Status.Salary);
-                        finances[partnerTeam.team_abbv].CurrentTeamSalary += (myPlayer.Status.Salary - theirPlayer.Status.Salary);
-                        return true; // 트레이드 성공
+                        bestTrade = new BestTradeOption
+                        {
+                            MyPlayer = myPlayerInfo.Rating,
+                            TheirPlayer = theirPlayerInfo.Rating,
+                            PartnerTeamAbbr = partnerTeam.team_abbv,
+                            SalaryChange = salaryChange
+                        };
                     }
                 }
             }
         }
+        
+        if (bestTrade != null)
+        {
+            Debug.Log($"[Salary Cap Trade] Executing best option: {bestTrade.MyPlayer.name} for {bestTrade.TheirPlayer.name}. Salary savings: ${-bestTrade.SalaryChange:N0}");
+            _tradeManager.ExecuteTrade(
+                overBudgetTeam.team_abbv, new List<PlayerRating> { bestTrade.MyPlayer },
+                bestTrade.PartnerTeamAbbr, new List<PlayerRating> { bestTrade.TheirPlayer }
+            );
+            return true;
+        }
 
         return false; // 적절한 트레이드 대상을 찾지 못함
+    }
+
+    private class BestTradeOption
+    {
+        public PlayerRating MyPlayer { get; set; }
+        public PlayerRating TheirPlayer { get; set; }
+        public string PartnerTeamAbbr { get; set; }
+        public long SalaryChange { get; set; }
     }
 
     private void ReleaseLowValuePlayersUntilBudgetMet(Team team, Dictionary<string, TeamFinance> finances)
@@ -248,10 +269,11 @@ public class SeasonManager : MonoBehaviour
             Debug.Log($"[Salary Cap] Releasing {playerInfo.Rating.name} (Value: {playerInfo.Rating.currentValue}, Salary: ${playerInfo.Status.Salary:N0})");
             
             // 선수를 FA로 보냄
-            _dbManager.UpdatePlayerTeam(playerInfo.Rating.player_id, "FA");
+            _dbManager.UpdatePlayerTeam(new List<int> { playerInfo.Rating.player_id }, "FA");
             
             // 재정 정보 업데이트
-            finance.CurrentTeamSalary -= playerInfo.Status.Salary;
+            long annualSalary = (playerInfo.Status.YearsLeft > 0) ? (playerInfo.Status.Salary / playerInfo.Status.YearsLeft) : 0;
+            finance.CurrentTeamSalary -= annualSalary;
             _dbManager.UpdateTeamFinance(finance);
         }
 
@@ -271,24 +293,30 @@ public class SeasonManager : MonoBehaviour
         var rosterB = _dbManager.GetPlayersByTeam(teamB.team_abbv).OrderByDescending(p => p.currentValue).ToList();
 
         if (rosterA.Count < 2 || rosterB.Count < 2) return;
-
-        // 양 팀에서 비슷한 가치의 선수 찾기 (예: 2~5번째 선수 중 랜덤)
-        int rank = UnityEngine.Random.Range(1, Math.Min(5, Math.Min(rosterA.Count, rosterB.Count)));
-        PlayerRating playerA = rosterA[rank];
-        PlayerRating playerB = rosterB[rank];
         
-        // 가치 차이가 너무 크면 트레이드 중단 (예: 20% 이상 차이)
-        if (Mathf.Abs(playerA.currentValue - playerB.currentValue) / playerA.currentValue > 0.2f)
-        {
-            return;
-        }
-        
-        Debug.Log($"[Fair Trade] Proposing trade between {teamA.team_abbv} and {teamB.team_abbv}: {playerA.name} <-> {playerB.name}");
+        // 시도해볼만한 랜덤한 선수 1:1 트레이드
+        var playerA = rosterA[UnityEngine.Random.Range(0, rosterA.Count)];
+        var playerB = rosterB[UnityEngine.Random.Range(0, rosterB.Count)];
 
-        _tradeManager.EvaluateAndExecuteTrade(
+        var resultA = _tradeManager.EvaluateTrade(
             teamA.team_abbv, new List<PlayerRating> { playerA },
             teamB.team_abbv, new List<PlayerRating> { playerB }
         );
+        
+        // teamB 입장에서의 평가
+        var resultB = _tradeManager.EvaluateTrade(
+            teamB.team_abbv, new List<PlayerRating> { playerB },
+            teamA.team_abbv, new List<PlayerRating> { playerA }
+        );
+
+        if (resultA.IsAccepted && resultB.IsAccepted)
+        {
+            Debug.Log($"[Fair Trade] Executing trade between {teamA.team_abbv} and {teamB.team_abbv}: {playerA.name} <-> {playerB.name}");
+            _tradeManager.ExecuteTrade(
+                teamA.team_abbv, new List<PlayerRating> { playerA },
+                teamB.team_abbv, new List<PlayerRating> { playerB }
+            );
+        }
     }
 
 
@@ -345,10 +373,18 @@ public class SeasonManager : MonoBehaviour
         else
         {
             Debug.Log($"[AI-AI Trade Proposal] {teamA.team_abbv} ({strategyA}) -> {teamB.team_abbv} ({strategyB})");
-            _tradeManager.EvaluateAndExecuteTrade(
+            var result = _tradeManager.EvaluateTrade(
                 teamA.team_abbv, new List<PlayerRating> { playerToTradeFromA },
                 teamB.team_abbv, new List<PlayerRating> { playerToTradeFromB }
             );
+
+            if (result.IsAccepted)
+            {
+                _tradeManager.ExecuteTrade(
+                    teamA.team_abbv, new List<PlayerRating> { playerToTradeFromA },
+                    teamB.team_abbv, new List<PlayerRating> { playerToTradeFromB }
+                );
+            }
         }
     }
     
