@@ -1,6 +1,8 @@
 using UnityEngine;
 using UnityEngine.UI;
+using TMPro;
 using UnityEngine.SceneManagement;
+using System;
 
 /// <summary>
 /// 시즌 씬에서 상단(또는 좌측) 탭 버튼을 관리하는 매니저.
@@ -23,6 +25,12 @@ public class SeasonSceneManager : MonoBehaviour
     [SerializeField] private GameObject tradePanel;
     [SerializeField] private GameObject recordPanel;
 
+    [Header("My Team Header UI")]
+    [SerializeField] private Image myTeamLogoImage;
+    [SerializeField] private TMP_Text myTeamNameText;
+    [SerializeField] private TMP_Text currentDateText;
+    [SerializeField] private TMP_Text currentBudgetText;
+
     private void Awake()
     {
         // 버튼 이벤트 등록
@@ -33,10 +41,79 @@ public class SeasonSceneManager : MonoBehaviour
         if (quitButton) quitButton.onClick.AddListener(OnQuitClicked);
     }
 
+    private void OnEnable()
+    {
+        UpdateHeaderUI();
+    }
+
     private void Start()
     {
         // 시작 시 기본적으로 스케줄(캘린더) 패널 보여주기
         ShowOnlyPanel(calendarPanel);
+
+        // 상단(좌측) 헤더 UI 업데이트
+        UpdateHeaderUI();
+    }
+
+    /// <summary>
+    /// 사용자 팀 로고, 팀 이름, 현재 날짜, 예산 등을 화면에 업데이트한다.
+    /// 씬 진입 시와 날짜/예산 변동 시 호출.
+    /// </summary>
+    private void UpdateHeaderUI()
+    {
+        var user = LocalDbManager.Instance.GetUser();
+        if (user == null)
+        {
+            Debug.LogWarning("[SeasonSceneManager] User 정보가 없어 헤더를 업데이트할 수 없습니다.");
+            return;
+        }
+
+        string teamAbbr = user.SelectedTeamAbbr;
+        int season = user.CurrentSeason;
+
+        // 1) 팀 로고 & 이름
+        if (myTeamLogoImage != null)
+        {
+            Sprite logo = Resources.Load<Sprite>($"team_photos/{teamAbbr.ToLower()}");
+            if (logo == null)
+            {
+                logo = Resources.Load<Sprite>("team_photos/default_logo");
+            }
+            myTeamLogoImage.sprite = logo;
+        }
+
+        if (myTeamNameText != null)
+        {
+            Team teamEntity = LocalDbManager.Instance.GetTeam(teamAbbr);
+            myTeamNameText.text = teamEntity != null ? teamEntity.team_name : teamAbbr;
+        }
+
+        // 2) 현재 날짜
+        if (currentDateText != null)
+        {
+            if (DateTime.TryParse(user.CurrentDate, out DateTime dt))
+            {
+                currentDateText.text = dt.ToString("yyyy년 MMM d일");
+            }
+            else
+            {
+                currentDateText.text = user.CurrentDate;
+            }
+        }
+
+        // 3) 예산 (Budget)
+        if (currentBudgetText != null)
+        {
+            var finance = LocalDbManager.Instance.GetTeamFinance(teamAbbr, season);
+            if (finance != null)
+            {
+                currentBudgetText.text = $"$ {finance.TeamBudget:N0}"; // 천단위 구분기호
+            }
+            else
+            {
+                currentBudgetText.text = "$ -";
+            }
+        }
     }
 
     #region Button Callbacks
