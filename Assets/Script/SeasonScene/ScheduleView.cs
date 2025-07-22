@@ -1,47 +1,55 @@
 using UnityEngine;
+using UnityEngine.UI;
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using TMPro;
 using System.Globalization;
-using UnityEngine.UI;
 
 public class ScheduleView : MonoBehaviour
 {
+    [Header("UI References")]
     [SerializeField] private Transform contentParent;
     [SerializeField] private ScheduleCell scheduleCellPrefab;
     [SerializeField] private TMP_Text dateLabel;
-    [Header("Scroll Components")]
-    [SerializeField] private ScrollRect scrollRect; // Assign via Inspector
+    
+    [Header("Actions")]
+    [SerializeField] private Button startGameButton;
 
     private string _userTeamAbbr;
     private int _currentSeason;
+    private Schedule _userGameOnSelectedDate;
 
     private void Awake()
     {
-        // Ensure ContentSizeFitter exists so content height expands with children
-        if (contentParent != null)
-        {
-            var fitter = contentParent.GetComponent<ContentSizeFitter>();
-            if (fitter == null)
-            {
-                fitter = contentParent.gameObject.AddComponent<ContentSizeFitter>();
-                fitter.verticalFit = ContentSizeFitter.FitMode.PreferredSize;
-                fitter.horizontalFit = ContentSizeFitter.FitMode.Unconstrained;
-            }
-        }
-
-        _userTeamAbbr = LocalDbManager.Instance.GetUser()?.SelectedTeamAbbr;
         var user = LocalDbManager.Instance.GetUser();
-        _currentSeason = user?.CurrentSeason ?? DateTime.Now.Year;
-
-        DateTime initDate;
-        if (user != null && DateTime.TryParse(user.CurrentDate, out initDate))
+        if (user != null)
         {
-            UpdateDateLabel(initDate);
+            _userTeamAbbr = user.SelectedTeamAbbr;
+            _currentSeason = user.CurrentSeason;
+
+            if (DateTime.TryParse(user.CurrentDate, out DateTime initDate))
+            {
+                UpdateDateLabel(initDate);
+            }
+            else
+            {
+                UpdateDateLabel(DateTime.Now);
+            }
         }
         else
         {
+            // 유저 정보가 없을 경우의 기본값
+            _userTeamAbbr = "BOS"; // 예시 팀
+            _currentSeason = DateTime.Now.Year;
             UpdateDateLabel(DateTime.Now);
+            Debug.LogWarning("User 정보를 찾을 수 없어 기본값으로 설정합니다.");
+        }
+
+        if (startGameButton != null)
+        {
+            startGameButton.onClick.AddListener(OnStartGameClicked);
+            startGameButton.gameObject.SetActive(false); // 초기에는 비활성화
         }
     }
 
@@ -63,13 +71,13 @@ public class ScheduleView : MonoBehaviour
         }
 
         UpdateDateLabel(date);
+        _userGameOnSelectedDate = null; // 리셋
 
         string dateStr = date.ToString("yyyy-MM-dd");
         List<Schedule> games = LocalDbManager.Instance.GetGamesForDate(dateStr);
         if (games == null || games.Count == 0)
         {
-            // 레이아웃 강제 갱신하여 스크롤 범위 업데이트
-            StartCoroutine(WaitAndRebuild());
+            if (startGameButton != null) startGameButton.gameObject.SetActive(false);
             return;
         }
 
@@ -86,9 +94,34 @@ public class ScheduleView : MonoBehaviour
             ScheduleCell cell = Instantiate(scheduleCellPrefab, contentParent);
             cell.Configure(game, _currentSeason);
         }
+        
+        // 내 팀의 예정된 경기가 있는지 확인
+        _userGameOnSelectedDate = games.FirstOrDefault(g => 
+            (g.HomeTeamAbbr == _userTeamAbbr || g.AwayTeamAbbr == _userTeamAbbr) && g.GameStatus == "Scheduled");
 
-        // 레이아웃을 즉시 다시 계산하고 스크롤 위치 초기화
-        StartCoroutine(WaitAndRebuild());
+        // 버튼 상태 업데이트
+        if (startGameButton != null)
+        {
+            startGameButton.gameObject.SetActive(_userGameOnSelectedDate != null);
+        }
+    }
+
+    private void OnStartGameClicked()
+    {
+        if (_userGameOnSelectedDate == null)
+        {
+            Debug.LogError("시작할 경기가 선택되지 않았습니다.");
+            return;
+        }
+
+        // GameScene에서 사용할 GameId를 저장
+        PlayerPrefs.SetString("SelectedGameId", _userGameOnSelectedDate.GameId);
+        PlayerPrefs.Save();
+
+        Debug.Log($"경기 시작: {_userGameOnSelectedDate.GameId}. gamelogic_test 씬으로 이동합니다.");
+        
+        // 경기 씬 로드
+        UnityEngine.SceneManagement.SceneManager.LoadScene("gamelogic_test");
     }
 
     private void UpdateDateLabel(DateTime dt)
@@ -96,26 +129,5 @@ public class ScheduleView : MonoBehaviour
         if (dateLabel == null) return;
         string formatted = dt.ToString("d MMM yyyy", CultureInfo.GetCultureInfo("en-US")).ToUpper();
         dateLabel.text = formatted;
-    }
-
-    /// <summary>
-    /// 콘텐츠의 레이아웃을 강제로 갱신하고 스크롤을 최상단(=1)으로 맞춥니다.
-    /// </summary>
-    private System.Collections.IEnumerator WaitAndRebuild()
-    {
-        // Wait till end of frame so layout groups have processed sizes
-        yield return null;
-
-        if (contentParent is RectTransform rt)
-        {
-            Canvas.ForceUpdateCanvases();
-            LayoutRebuilder.ForceRebuildLayoutImmediate(rt);
-        }
-
-        // Keep scroll at top after rebuild (user can scroll freely afterward)
-        if (scrollRect != null)
-        {
-            scrollRect.verticalNormalizedPosition = 1f;
-        }
     }
 } 

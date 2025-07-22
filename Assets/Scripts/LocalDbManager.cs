@@ -217,9 +217,9 @@ public class LocalDbManager : MonoBehaviour
             return;
         }
         User existing = GetUser();
-        string today = "2025-10-21";
         if (existing == null)
         {
+            string today = "2025-10-21"; // 최초 생성 시에만 시작 날짜 설정
             User newUser = new User
             {
                 CoachName = coachName,
@@ -232,12 +232,34 @@ public class LocalDbManager : MonoBehaviour
         }
         else
         {
+            // 기존 유저 정보 업데이트 시, 날짜는 수정하지 않음
             existing.CoachName = coachName;
             existing.SelectedTeamAbbr = selectedTeamAbbr;
             existing.CurrentSeason = currentSeason;
-            existing.CurrentDate = today;
             _db.Update(existing);
-            Debug.Log("[DB] User record updated.");
+            Debug.Log("[DB] User record updated (name/team/season).");
+        }
+    }
+
+    /// <summary>
+    /// 현재 유저의 날짜를 하루 뒤로 업데이트합니다.
+    /// </summary>
+    public void AdvanceUserDate()
+    {
+        User existing = GetUser();
+        if (existing != null)
+        {
+            if (DateTime.TryParse(existing.CurrentDate, out DateTime currentDate))
+            {
+                DateTime nextDate = currentDate.AddDays(1);
+                existing.CurrentDate = nextDate.ToString("yyyy-MM-dd");
+                _db.Update(existing);
+                Debug.Log($"[DB] User date advanced to {existing.CurrentDate}.");
+            }
+            else
+            {
+                Debug.LogError($"[DB] Could not parse date: {existing.CurrentDate}");
+            }
         }
     }
 
