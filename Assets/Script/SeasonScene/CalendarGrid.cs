@@ -27,6 +27,7 @@ public class CalendarGrid : MonoBehaviour
 
     private int _currentYear;
     private int _currentMonth;
+    private CalendarCell _selectedCell; // 현재 선택된 셀을 추적
 
     private const int TOTAL_SLOTS = 42; // 7x6 달력 그리드
 
@@ -108,6 +109,7 @@ public class CalendarGrid : MonoBehaviour
 
         // 3) 셀 생성
         string userTeamAbbr = LocalDbManager.Instance.GetUser()?.SelectedTeamAbbr;
+        DateTime today = SeasonManager.Instance.GetCurrentDate(); // '오늘' 날짜 가져오기
 
         for (int slot = 0; slot < TOTAL_SLOTS; slot++)
         {
@@ -116,14 +118,16 @@ public class CalendarGrid : MonoBehaviour
             int dayNum = slot - offset + 1;
             if (dayNum >= 1 && dayNum <= daysInMonth)
             {
+                DateTime cellDate = new DateTime(_currentYear, _currentMonth, dayNum);
+                bool isToday = (cellDate.Date == today.Date); // 오늘 날짜인지 확인
+
                 // 날짜 문자열 yyyy-MM-dd
-                string dateStr = new DateTime(_currentYear, _currentMonth, dayNum).ToString("yyyy-MM-dd");
+                string dateStr = cellDate.ToString("yyyy-MM-dd");
                 List<Schedule> games = LocalDbManager.Instance.GetGamesForDate(dateStr);
                 bool hasGame = games != null && games.Count > 0;
 
                 // --- Determine opponent logo if the user's team plays on this date ---
                 Sprite displayLogo = null;
-
                 bool isUserGame = false;
                 if (hasGame && !string.IsNullOrEmpty(userTeamAbbr))
                 {
@@ -132,22 +136,24 @@ public class CalendarGrid : MonoBehaviour
                     if (userGame != null)
                     {
                         isUserGame = true;
-
                         // Identify opponent team abbreviation
                         string opponentAbbr = userGame.HomeTeamAbbr == userTeamAbbr ? userGame.AwayTeamAbbr : userGame.HomeTeamAbbr;
-                        displayLogo = Resources.Load<Sprite>($"team_photos/{opponentAbbr}");
+                        if (!string.IsNullOrEmpty(opponentAbbr))
+                        {
+                            // 로고 파일 이름은 소문자일 수 있으므로 ToLower() 추가
+                            displayLogo = Resources.Load<Sprite>($"team_photos/{opponentAbbr.ToLower()}");
+                        }
                     }
                 }
 
-                // If user's team is not playing, keep previous behaviour (no logo)
+                cell.Configure(dayNum, _currentMonth, _currentYear, isToday, displayLogo, isUserGame);
 
-                cell.Configure(dayNum, _currentMonth, _currentYear, hasGame, displayLogo, isUserGame);
-                cell.OnCellClicked += HandleCellClicked;
+                // --- Handle click event ---
+                cell.OnCellClicked += (date) => HandleCellClicked(cell, date);
             }
             else
             {
-                // 빈 슬롯도 outline 회색으로 유지 (isUserGame = false)
-                cell.Configure(0, _currentMonth, _currentYear, false, null, false);
+                cell.Configure(0, 0, 0, false, null, false);
             }
         }
 
@@ -187,10 +193,34 @@ public class CalendarGrid : MonoBehaviour
 
         _currentYear = dt.Year;
         _currentMonth = dt.Month;
+        UpdateMonthLabel();
     }
 
-    private void HandleCellClicked(DateTime date)
+    private void HandleCellClicked(CalendarCell cell, DateTime date)
     {
-        scheduleView?.ShowScheduleForDate(date);
+        // 이전에 선택된 셀이 있었다면 선택 해제
+        if (_selectedCell != null)
+        {
+            _selectedCell.SetSelected(false);
+        }
+
+        // 새로 선택된 셀 처리
+        cell.SetSelected(true);
+        _selectedCell = cell;
+
+        // ScheduleView 업데이트
+        if (scheduleView != null)
+        {
+            scheduleView.ShowScheduleForDate(date);
+        }
+    }
+
+    private void UpdateMonthLabel()
+    {
+        if (monthLabel)
+        {
+            string monthName = CultureInfo.GetCultureInfo("en-US").DateTimeFormat.GetMonthName(_currentMonth).ToUpper();
+            monthLabel.text = $"{monthName} {_currentYear}";
+        }
     }
 }
