@@ -35,6 +35,11 @@ public class UIManager : MonoBehaviour
     [Header("Game Log UI")]
     public GameLogUI gameLogUI; // 새로 추가
 
+    [Header("Court & Puck References")]
+    public Transform courtPanel;
+    public Transform homeBenchPanel; // [추가] 홈팀 벤치 패널
+    public Transform awayBenchPanel; // [추가] 어웨이팀 벤치 패널
+
     [Header("Auto-Sub Toggle")]
     public Toggle autoSubToggle;
     public Animator autoSubToggleAnimator; // 토글 애니메이터
@@ -43,13 +48,9 @@ public class UIManager : MonoBehaviour
     [Header("Game Simulator")]
     [SerializeField] private GameSimulator gameSimulator;
 
-    [Header("Court & Puck References")]
-    public PlayerPuck playerPuckPrefab;
-    public Transform[] homeCourtPositions;
-    public Transform[] awayCourtPositions;
-
     private Dictionary<int, PlayerPuck> _playerPucks = new Dictionary<int, PlayerPuck>();
     private Dictionary<string, Color> _teamColors = new Dictionary<string, Color>();
+    private int _userTeamId = -1; // [추가]
 
     void Awake()
     {
@@ -63,6 +64,12 @@ public class UIManager : MonoBehaviour
         }
         
         InitializeTeamColors();
+
+        // [추가]
+        if (gameSimulator != null)
+        {
+            _userTeamId = gameSimulator.GetUserTeamId(); // GameSimulator로부터 유저 팀 ID 가져오기
+        }
 
         if (autoSubToggle != null)
         {
@@ -135,33 +142,58 @@ public class UIManager : MonoBehaviour
         }
     }
 
+    public void RequestManualSubstitution(PlayerPuck playerInPuck, PlayerPuck playerOutPuck)
+    {
+        if (gameSimulator != null)
+        {
+            gameSimulator.RequestManualSubstitution(playerInPuck.Player, playerOutPuck.Player);
+        }
+    }
+
     public void InitializePlayerPucks(List<GamePlayer> homeRoster, List<GamePlayer> awayRoster)
     {
+        // 기존 퍽들 모두 제거
         foreach (var puck in _playerPucks.Values)
         {
             Destroy(puck.gameObject);
         }
         _playerPucks.Clear();
 
-        var homeStarters = homeRoster.OrderByDescending(p => p.Rating.overallAttribute).Take(5).ToList();
-        for(int i = 0; i < homeStarters.Count; i++)
+        // 팀 컬러 정보 가져오기
+        TeamColors teamColors = FindFirstObjectByType<TeamColors>();
+
+        // 홈팀 선수들 배치
+        foreach (var player in homeRoster)
         {
-            if (i < homeCourtPositions.Length)
+            Transform parentPanel = player.IsOnCourt ? courtPanel : homeBenchPanel;
+            // 유저팀이 어웨이팀이면, 벤치 선수들은 생성하지 않음 (UI 간소화)
+            if (parentPanel == homeBenchPanel && _userTeamId != 0) continue;
+
+            GameObject puckObj = Instantiate(playerPuckPrefab.gameObject, parentPanel);
+            PlayerPuck puckComponent = puckObj.GetComponent<PlayerPuck>();
+            if (puckComponent != null && teamColors != null)
             {
-                PlayerPuck puck = Instantiate(playerPuckPrefab, homeCourtPositions[i]);
-                puck.Setup(homeStarters[i]);
-                _playerPucks.Add(homeStarters[i].Rating.player_id, puck);
+                puckComponent.Setup(player, teamColors.GetTeamColor(gameSimulator.CurrentState.HomeTeamAbbr));
+                _playerPucks.Add(player.Rating.player_id, puckComponent);
             }
         }
 
-        var awayStarters = awayRoster.OrderByDescending(p => p.Rating.overallAttribute).Take(5).ToList();
-        for(int i = 0; i < awayStarters.Count; i++)
+        // 어웨이팀 선수들 배치
+        foreach (var player in awayRoster)
         {
-            if (i < awayCourtPositions.Length)
+            Transform parentPanel = player.IsOnCourt ? courtPanel : awayBenchPanel;
+            // 유저팀이 홈팀이면, 어웨이 벤치 선수들은 생성하지 않음
+            if (parentPanel == awayBenchPanel && _userTeamId != 1) continue;
+            
+            // AI팀의 경우 코트 위 선수만 표시
+            if (!player.IsOnCourt) continue;
+
+            GameObject puckObj = Instantiate(playerPuckPrefab.gameObject, parentPanel);
+            PlayerPuck puckComponent = puckObj.GetComponent<PlayerPuck>();
+            if (puckComponent != null && teamColors != null)
             {
-                PlayerPuck puck = Instantiate(playerPuckPrefab, awayCourtPositions[i]);
-                puck.Setup(awayStarters[i]);
-                _playerPucks.Add(awayStarters[i].Rating.player_id, puck);
+                puckComponent.Setup(player, teamColors.GetTeamColor(gameSimulator.CurrentState.AwayTeamAbbr));
+                _playerPucks.Add(player.Rating.player_id, puckComponent);
             }
         }
     }
@@ -220,13 +252,42 @@ public class UIManager : MonoBehaviour
     
     private void UpdatePlayerPuck(GamePlayer playerOut, GamePlayer playerIn)
     {
-        if (_playerPucks.ContainsKey(playerOut.Rating.player_id))
+        // 유저팀의 교체인 경우: 퍽의 부모를 바꿔 위치를 스왑
+        if (playerIn.TeamId == _userTeamId)
         {
-            PlayerPuck puckToUpdate = _playerPucks[playerOut.Rating.player_id];
-            
-            _playerPucks.Remove(playerOut.Rating.player_id);
-            puckToUpdate.Setup(playerIn);
-            _playerPucks.Add(playerIn.Rating.player_id, puckToUpdate);
+            if (_playerPucks.ContainsKey(playerOut.Rating.player_id) && _playerPucks.ContainsKey(playerIn.Rating.player_id))
+            {
+                PlayerPuck puckOut = _playerPucks[playerOut.Rating.player_id];
+                PlayerPuck puckIn = _playerPucks[playerIn.Rating.player_id];
+
+                // 두 퍽의 부모 트랜스폼을 교환
+                Transform puckOutParent = puckOut.transform.parent;
+                puckOut.transform.SetParent(puckIn.transform.parent);
+                puckIn.transform.SetParent(puckOutParent);
+
+                // 위치 초기화 (GridLayoutGroup 등 자동 정렬 레이아웃을 위해)
+                puckOut.GetComponent<RectTransform>().anchoredPosition = Vector2.zero;
+                puckIn.GetComponent<RectTransform>().anchoredPosition = Vector2.zero;
+            }
+        }
+        else // AI팀의 교체인 경우: 나가는 퍽은 비활성화, 들어오는 퍽은 새로 생성
+        {
+            // 1. 코트에서 나가는 선수 퍽 제거
+            if (_playerPucks.ContainsKey(playerOut.Rating.player_id))
+            {
+                Destroy(_playerPucks[playerOut.Rating.player_id].gameObject);
+                _playerPucks.Remove(playerOut.Rating.player_id);
+            }
+
+            // 2. 코트로 들어오는 선수 퍽 새로 생성
+            TeamColors teamColors = FindFirstObjectByType<TeamColors>();
+            GameObject puckObj = Instantiate(playerPuckPrefab.gameObject, courtPanel);
+            PlayerPuck puckComponent = puckObj.GetComponent<PlayerPuck>();
+            if (puckComponent != null && teamColors != null)
+            {
+                puckComponent.Setup(playerIn, teamColors.GetTeamColor(gameSimulator.CurrentState.AwayTeamAbbr));
+                _playerPucks.Add(playerIn.Rating.player_id, puckComponent);
+            }
         }
     }
 

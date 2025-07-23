@@ -160,7 +160,7 @@ public class SeasonManager : MonoBehaviour
                 }
             }
         }
-        
+
         // 3. AI -> User 트레이드 제안
         Team userTeam = allTeams.FirstOrDefault(t => t.team_abbv == _userTeamAbbr);
         if (userTeam != null)

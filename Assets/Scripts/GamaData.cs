@@ -34,32 +34,33 @@ public class GamePlayer
         EffectiveOverall = rating.overallAttribute; // 초기값은 기본 OVR로 설정
     }
 
-    public PlayerStat ExportToPlayerStat(int playerId, int season, string gameId)
+    public PlayerStat ExportToPlayerStat(int playerId, int season, string gameId, string gameDate, string teamAbbr)
     {
-        return new PlayerStat
+        var stat = new PlayerStat
         {
             PlayerId = playerId,
-            PlayerName = this.Rating.name, // 이름 추가
-            TeamAbbr = this.Rating.team,   // 팀 약어 추가
             Season = season,
             GameId = gameId,
+            GameDate = gameDate, // gameDate 인자 사용
+            PlayerName = this.Rating.name,
+            TeamAbbr = teamAbbr, // 매개변수로 받은 정확한 팀 약어 사용
             SecondsPlayed = (int)this.Stats.MinutesPlayedInSeconds,
             Points = this.Stats.Points,
             Assists = this.Stats.Assists,
-            Rebounds = this.Stats.OffensiveRebounds + this.Stats.DefensiveRebounds,
+            Rebounds = this.Stats.DefensiveRebounds + this.Stats.OffensiveRebounds,
             Steals = this.Stats.Steals,
             Blocks = this.Stats.Blocks,
             Turnovers = this.Stats.Turnovers,
-            FieldGoalsMade = this.Stats.FieldGoalsMade,             // 이하 스탯 추가
+            FieldGoalsMade = this.Stats.FieldGoalsMade,
             FieldGoalsAttempted = this.Stats.FieldGoalsAttempted,
             ThreePointersMade = this.Stats.ThreePointersMade,
             ThreePointersAttempted = this.Stats.ThreePointersAttempted,
             FreeThrowsMade = this.Stats.FreeThrowsMade,
             FreeThrowsAttempted = this.Stats.FreeThrowsAttempted,
-            PersonalFouls = this.Stats.PersonalFouls, // 파울 기록 추가
-            PlusMinus = this.Stats.PlusMinus,
-            RecordedAt = System.DateTime.UtcNow.ToString("s")
+            PersonalFouls = this.Stats.PersonalFouls, // Fouls -> PersonalFouls
+            PlusMinus = this.Stats.PlusMinus
         };
+        return stat;
     }
 }
 
@@ -87,17 +88,15 @@ public class LivePlayerStats
 // 경기의 현재 상태를 관리
 public class GameState
 {
-    public string HomeTeamName { get; set; }
-    public string AwayTeamName { get; set; }
     public int Season { get; set; }
     public string GameId { get; set; }
-
-    public int Quarter { get; set; } = 1;
-    public float GameClockSeconds { get; set; } = 720f; // 12분
-    public float ShotClockSeconds { get; set; } = 24f;
-    public int PossessingTeamId { get; set; } = 0; // 0: Home, 1: Away
-    public int HomeScore { get; set; } = 0;
-    public int AwayScore { get; set; } = 0;
+    public string GameDate { get; set; } // [추가] 경기 날짜
+    public string HomeTeamName { get; set; } // 이름 -> 약칭으로 사용
+    public string HomeTeamAbbr { get; set; } // [추가] 홈팀 약칭
+    public string AwayTeamName { get; set; }
+    public string AwayTeamAbbr { get; set; } // [추가] 어웨이팀 약칭
+    public int HomeScore { get; set; }
+    public int AwayScore { get; set; }
     public GamePlayer LastPasser { get; set; } = null; 
     public GamePlayer PotentialAssister { get; set; } = null;
 }
