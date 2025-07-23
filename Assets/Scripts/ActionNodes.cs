@@ -96,6 +96,18 @@ public class Condition_IsGoodForMidRange : Node
         return (_random.NextDouble() * 100) < tendency ? NodeState.SUCCESS : NodeState.FAILURE;
     }
 }
+
+public class Condition_IsGood3PointShooter : Node
+{
+    private int _threshold;
+    public Condition_IsGood3PointShooter(int threshold) { _threshold = threshold; }
+
+    public override NodeState Evaluate(IGameSimulator sim, GamePlayer player)
+    {
+        // 선수의 능력치가 스태미나 등에 따라 조정될 수 있으므로, 원본 능력치인 Rating을 사용합니다.
+        return player.Rating.threePointShot > _threshold ? NodeState.SUCCESS : NodeState.FAILURE;
+    }
+}
 #endregion
 
 #region Actions

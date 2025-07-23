@@ -300,7 +300,12 @@ public class GameSimulator : MonoBehaviour, IGameSimulator
                     new Sequence(new List<Node> { new Condition_IsOpenFor3(_random), new Action_TryForced3PointShot(_random) }),
                     new Sequence(new List<Node> { new Condition_CanDrive(_random), new Action_TryForcedDrive(_random) }),
                     new Sequence(new List<Node> { new Condition_IsGoodForMidRange(_random), new Action_TryForcedMidRangeShot(_random) }),
-                    new Action_TryForcedDrive(_random)
+                    // 3점슛 능력치에 따라 마지막 공격 옵션 선택
+                    new Sequence(new List<Node> {
+                        new Condition_IsGood3PointShooter(80),
+                        new Action_TryForced3PointShot(_random)
+                    }),
+                    new Action_TryForcedDrive(_random) // 3점슛이 좋지 않으면 돌파 시도
                 })
             }),
             new Selector(new List<Node> {
@@ -492,6 +497,18 @@ public class GameSimulator : MonoBehaviour, IGameSimulator
         PerformSubstitution(playerOut, playerIn);
         return true;
     }
+
+    /// <summary>
+    /// [추가] 선수를 코트에 투입시키기만 하는 간단한 메서드. EjectPlayer에서 사용
+    /// </summary>
+    private void AddPlayerToCourt(GamePlayer playerIn)
+    {
+        if(playerIn != null)
+        {
+            playerIn.IsOnCourt = true;
+            // 교체와 관련된 로그나 이벤트는 EjectPlayer에서 이미 처리했으므로 여기서는 생략
+        }
+    }
     #endregion
 
     #region New Foul Out & Injury Logic
@@ -509,7 +526,8 @@ public class GameSimulator : MonoBehaviour, IGameSimulator
         
         if (substitute != null)
         {
-            PerformSubstitution(player, substitute);
+            AddPlayerToCourt(substitute);
+            AddLog($"--- {substitute.Rating.name} comes in for the ejected player. ---");
         }
         else
         {
