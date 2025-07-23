@@ -57,10 +57,8 @@ public class Condition_IsGoodPassOpportunity : Node
 
     public override NodeState Evaluate(IGameSimulator sim, GamePlayer player)
     {
-        float passTendency = 25f;
-        passTendency += (player.Rating.passIQ - 85) * 1.5f;
-        float overallModifier = (player.Rating.overallAttribute - 85) * 2.5f;
-        passTendency -= (float)Math.Max(0, overallModifier); // System.Math.Max
+        float passTendency = 55f; // 기본 패스 확률 조정 (65f -> 55f)
+        passTendency += (player.Rating.passIQ - 80) * 1.5f; // passIQ 영향력 강화
 
         return (_random.NextDouble() * 100) < passTendency ? NodeState.SUCCESS : NodeState.FAILURE;
     }
@@ -72,7 +70,7 @@ public class Condition_IsOpenFor3 : Node
     public Condition_IsOpenFor3(System.Random random) { _random = random; }
     public override NodeState Evaluate(IGameSimulator sim, GamePlayer player)
     {
-        float tendency = (player.Rating.threePointShot - 70) * 2.0f;
+        float tendency = 20 + (player.Rating.threePointShot - 70) * 2.0f;
         return (_random.NextDouble() * 100) < tendency ? NodeState.SUCCESS : NodeState.FAILURE;
     }
 }
@@ -83,7 +81,7 @@ public class Condition_CanDrive : Node
     public Condition_CanDrive(System.Random random) { _random = random; }
     public override NodeState Evaluate(IGameSimulator sim, GamePlayer player)
     {
-        float tendency = (player.Rating.drivingDunk + player.Rating.layup - 140) * 1.5f;
+        float tendency = 20 + (player.Rating.drivingDunk + player.Rating.layup - 140) * 1.5f;
         return (_random.NextDouble() * 100) < tendency ? NodeState.SUCCESS : NodeState.FAILURE;
     }
 }
@@ -94,7 +92,7 @@ public class Condition_IsGoodForMidRange : Node
     public Condition_IsGoodForMidRange(System.Random random) { _random = random; }
     public override NodeState Evaluate(IGameSimulator sim, GamePlayer player)
     {
-        float tendency = (player.Rating.midRangeShot - 65) * 2.0f;
+        float tendency = 20 + (player.Rating.midRangeShot - 65) * 2.0f;
         return (_random.NextDouble() * 100) < tendency ? NodeState.SUCCESS : NodeState.FAILURE;
     }
 }
@@ -112,10 +110,10 @@ public class Action_Try3PointShot : Node
         var defender = game.GetRandomDefender(player.TeamId);
         var adjustedDefender = game.GetAdjustedRating(defender);
 
-        float successChance = 5 + (adjustedRating.threePointShot * 0.4f);
+        float successChance = 40 + (adjustedRating.threePointShot * 0.5f);
         if (defender != null)
         {
-            successChance -= adjustedDefender.perimeterDefense * 0.15f;
+            successChance -= adjustedDefender.perimeterDefense * 0.35f;
             successChance -= adjustedDefender.speed * 0.05f;
         }
 
@@ -162,8 +160,8 @@ public class Action_TryForced3PointShot : Node
         var defender = game.GetRandomDefender(player.TeamId);
         var adjustedDefender = game.GetAdjustedRating(defender);
         
-        float successChance = adjustedRating.threePointShot * 0.3f;
-        if(defender != null) successChance -= adjustedDefender.perimeterDefense * 0.1f;
+        float successChance = 25 + adjustedRating.threePointShot * 0.4f;
+        if(defender != null) successChance -= adjustedDefender.perimeterDefense * 0.3f;
 
         bool madeShot = (_random.NextDouble() * 100) < successChance;
         game.ConsumeTime((float)(_random.NextDouble() * (4-2)+2));
@@ -207,8 +205,8 @@ public class Action_TryMidRangeShot : Node
         var defender = game.GetRandomDefender(player.TeamId);
         var adjustedDefender = game.GetAdjustedRating(defender);
         
-        float successChance = 15 + adjustedRating.midRangeShot * 0.4f;
-        if(defender != null) successChance -= (adjustedDefender.perimeterDefense + adjustedDefender.interiorDefense) * 0.1f;
+        float successChance = 50 + adjustedRating.midRangeShot * 0.5f;
+        if(defender != null) successChance -= (adjustedDefender.perimeterDefense + adjustedDefender.interiorDefense) * 0.35f;
 
         bool madeShot = (_random.NextDouble() * 100) < successChance;
         game.ConsumeTime((float)(_random.NextDouble() * (6-3)+3));
@@ -249,8 +247,8 @@ public class Action_TryForcedMidRangeShot : Node
         var defender = game.GetRandomDefender(player.TeamId);
         var adjustedDefender = game.GetAdjustedRating(defender);
 
-        float successChance = adjustedRating.midRangeShot * 0.3f;
-        if(defender != null) successChance -= (adjustedDefender.perimeterDefense + adjustedDefender.interiorDefense) * 0.08f;
+        float successChance = 35 + adjustedRating.midRangeShot * 0.4f;
+        if(defender != null) successChance -= (adjustedDefender.perimeterDefense + adjustedDefender.interiorDefense) * 0.3f;
         
         bool madeShot = (_random.NextDouble() * 100) < successChance;
         game.ConsumeTime((float)(_random.NextDouble() * (5-2)+2));
@@ -292,16 +290,15 @@ public class Action_DriveAndFinish : Node
         var defender = game.GetRandomDefender(player.TeamId);
         var adjustedDefender = game.GetAdjustedRating(defender);
 
-        float foulChance = adjustedRating.drawFoul * 0.2f;
-        if(defender != null) foulChance += adjustedDefender.interiorDefense * 0.05f;
-
-        if ((_random.NextDouble() * 100) < foulChance)
+        float foulChance = adjustedRating.drawFoul * 0.4f; // 파울 유도 능력 가중치 상향
+        
+        if ((_random.NextDouble() * 100) < foulChance && defender != null)
         {
             return game.ResolveShootingFoul(player, defender, 2);
         }
 
-        float successChance = 20 + adjustedRating.layup * 0.35f + adjustedRating.drivingDunk * 0.1f;
-        if(defender != null) successChance -= adjustedDefender.interiorDefense * 0.2f;
+        float successChance = 55 + adjustedRating.layup * 0.5f + adjustedRating.drivingDunk * 0.1f;
+        if(defender != null) successChance -= adjustedDefender.interiorDefense * 0.35f;
 
         bool madeShot = (_random.NextDouble() * 100) < successChance;
         game.ConsumeTime((float)(_random.NextDouble() * (8-4)+4));
@@ -350,16 +347,15 @@ public class Action_TryForcedDrive : Node
         var defender = game.GetRandomDefender(player.TeamId);
         var adjustedDefender = game.GetAdjustedRating(defender);
 
-        float foulChance = adjustedRating.drawFoul * 0.15f;
-        if(defender != null) foulChance += adjustedDefender.interiorDefense * 0.03f;
+        float foulChance = adjustedRating.drawFoul * 0.3f; // 파울 유도 능력 가중치 상향
         
-        if ((_random.NextDouble() * 100) < foulChance)
+        if ((_random.NextDouble() * 100) < foulChance && defender != null)
         {
             return game.ResolveShootingFoul(player, defender, 2);
         }
 
-        float successChance = adjustedRating.layup * 0.2f + adjustedRating.drivingDunk * 0.05f;
-        if(defender != null) successChance -= adjustedDefender.interiorDefense * 0.15f;
+        float successChance = 40 + adjustedRating.layup * 0.4f + adjustedRating.drivingDunk * 0.05f;
+        if(defender != null) successChance -= adjustedDefender.interiorDefense * 0.3f;
 
         bool madeShot = (_random.NextDouble() * 100) < successChance;
         game.ConsumeTime((float)(_random.NextDouble() * (7-3)+3));

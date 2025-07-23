@@ -17,8 +17,8 @@ public class GameSimulator : MonoBehaviour, IGameSimulator
     public float SimulationSpeed { get; set; } = 12.0f; // 기본 12배속 (48분 경기 -> 4분)
 
     [Header("Stamina & Substitution Settings")]
-    public float staminaSubOutThreshold = 40f;
-    public float staminaSubInThreshold = 75f;
+    public float staminaSubOutThreshold = 55f;
+    public float staminaSubInThreshold = 70f;
     public float staminaDepletionRate = 0.2f;
     public float staminaRecoveryRate = 0.4f;
     public float substitutionCheckInterval = 5.0f;
@@ -300,17 +300,19 @@ public class GameSimulator : MonoBehaviour, IGameSimulator
                     new Sequence(new List<Node> { new Condition_IsOpenFor3(_random), new Action_TryForced3PointShot(_random) }),
                     new Sequence(new List<Node> { new Condition_CanDrive(_random), new Action_TryForcedDrive(_random) }),
                     new Sequence(new List<Node> { new Condition_IsGoodForMidRange(_random), new Action_TryForcedMidRangeShot(_random) }),
-                    new Action_TryForced3PointShot(_random)
+                    new Action_TryForcedDrive(_random)
                 })
             }),
             new Selector(new List<Node> {
-                new Sequence(new List<Node> { new Condition_IsGoodPassOpportunity(_random), new Action_PassToBestTeammate(_random) }),
+                // 1. 슛 기회를 먼저 찾도록 순서 변경
                 new Selector(new List<Node> {
                     new Sequence(new List<Node> { new Condition_IsOpenFor3(_random), new Action_Try3PointShot(_random) }),
                     new Sequence(new List<Node> { new Condition_CanDrive(_random), new Action_DriveAndFinish(_random) }),
                     new Sequence(new List<Node> { new Condition_IsGoodForMidRange(_random), new Action_TryMidRangeShot(_random) })
                 }),
+                // 2. 좋은 슛 기회가 없으면 패스 시도
                 new Sequence(new List<Node> { new Condition_IsGoodPassOpportunity(_random), new Action_PassToBestTeammate(_random) }),
+                // 3. 최후의 수단으로 패스
                 new Action_PassToBestTeammate(_random)
             })
         });

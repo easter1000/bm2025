@@ -20,8 +20,8 @@ public class BackgroundGameSimulator : IGameSimulator
     private Node _rootOffenseNode;
     private System.Random _random;
 
-    private float staminaSubOutThreshold = 40f;
-    private float staminaSubInThreshold = 75f;
+    private float staminaSubOutThreshold = 55f;
+    private float staminaSubInThreshold = 70f;
     private float staminaDepletionRate = 0.2f;
     private float staminaRecoveryRate = 0.4f;
     // 게임 시간 기준 60초마다 교체 검사
@@ -189,11 +189,10 @@ public class BackgroundGameSimulator : IGameSimulator
                     new Sequence(new List<Node> { new Condition_IsOpenFor3(_random), new Action_TryForced3PointShot(_random) }),
                     new Sequence(new List<Node> { new Condition_CanDrive(_random), new Action_TryForcedDrive(_random) }),
                     new Sequence(new List<Node> { new Condition_IsGoodForMidRange(_random), new Action_TryForcedMidRangeShot(_random) }),
-                    new Action_TryForced3PointShot(_random)
+                    new Action_TryForcedDrive(_random)
                 })
             }),
             new Selector(new List<Node> {
-                new Sequence(new List<Node> { new Condition_IsGoodPassOpportunity(_random), new Action_PassToBestTeammate(_random) }),
                 new Selector(new List<Node> {
                     new Sequence(new List<Node> { new Condition_IsOpenFor3(_random), new Action_Try3PointShot(_random) }),
                     new Sequence(new List<Node> { new Condition_CanDrive(_random), new Action_DriveAndFinish(_random) }),
