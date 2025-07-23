@@ -259,6 +259,9 @@ public class SeasonSceneManager : MonoBehaviour
             return;
         }
 
+        // 다이얼로그 게임오브젝트를 활성화
+        confirmDialog.gameObject.SetActive(true);
+
         // 트레이드 제안 내용 메시지 생성
         var offeredPlayer = offer.PlayersOfferedByProposingTeam.FirstOrDefault();
         var requestedPlayer = offer.PlayersRequestedFromTargetTeam.FirstOrDefault();
