@@ -159,7 +159,7 @@ public class SeasonManager : MonoBehaviour
             var shuffledAiTeams = aiTeams.OrderBy(t => rand.Next()).ToList();
             foreach (var aiTeam in shuffledAiTeams)
             {
-                if (rand.Next(0, 100) < 100)
+                if (rand.Next(0, 1000) < 15)
                 {
                     var offer = GenerateAndProposeSmartTrade(aiTeam, teamFinances[aiTeam.team_abbv], userTeam, teamFinances[userTeam.team_abbv], rand, true);
                     if (offer != null)
