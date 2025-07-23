@@ -125,7 +125,8 @@ public class LocalDbManager : MonoBehaviour
                 ballHandle = p.ballHandle,
                 offensiveRebound = p.offensiveRebound,
                 defensiveRebound = p.defensiveRebound,
-                potential = p.potential
+                potential = p.potential,
+                injury = UnityEngine.Random.Range(0.01f, 0.1f)
             });
             statuses.Add(new PlayerStatus { PlayerId = p.player_id, YearsLeft = p.contract_years_left, Salary = p.contract_value, Stamina = 100, IsInjured = false, InjuryDaysLeft = 0});
             
@@ -223,11 +224,6 @@ public class LocalDbManager : MonoBehaviour
 
     #region Public DB Accessors
     
-    // --- [UTILITY] ---
-    /// <summary>
-    /// [일회성 유틸리티] DB에 있는 모든 선수에게 부상 위험도(injury) 값을 랜덤하게 할당합니다.
-    /// PlayerRating 테이블에 injury 컬럼이 추가된 후 한 번만 실행하면 됩니다.
-    /// </summary>
     public void AssignRandomInjuryRiskToAllPlayers()
     {
         Debug.Log("[DB UTILITY] Assigning random injury risk to all players...");
@@ -251,7 +247,7 @@ public class LocalDbManager : MonoBehaviour
     public User GetUser() => Connection.Table<User>().FirstOrDefault();
 
     // --- NEW: Save or update the current user information ---
-    public void SaveOrUpdateUser(string coachName, string selectedTeamAbbr, int currentSeason = 2025)
+    public void SaveOrUpdateUser(string selectedTeamAbbr, int currentSeason = 2025)
     {
         if (string.IsNullOrEmpty(selectedTeamAbbr))
         {
@@ -264,7 +260,6 @@ public class LocalDbManager : MonoBehaviour
             string today = "2025-10-21"; // 최초 생성 시에만 시작 날짜 설정
             User newUser = new User
             {
-                CoachName = coachName,
                 SelectedTeamAbbr = selectedTeamAbbr,
                 CurrentSeason = currentSeason,
                 CurrentDate = today
@@ -274,8 +269,6 @@ public class LocalDbManager : MonoBehaviour
         }
         else
         {
-            // 기존 유저 정보 업데이트 시, 날짜는 수정하지 않음
-            existing.CoachName = coachName;
             existing.SelectedTeamAbbr = selectedTeamAbbr;
             existing.CurrentSeason = currentSeason;
             Connection.Update(existing);
@@ -652,4 +645,28 @@ public class LocalDbManager : MonoBehaviour
         public TeamMasterData[] teams; 
     }
     #endregion
+
+    // 특정 팀의 best_five를 업데이트하는 메서드
+    public void UpdateBestFive(string teamAbbr, List<int> starterIds)
+    {
+        if (starterIds == null || starterIds.Count > 5)
+        {
+            Debug.LogError($"[DB] UpdateBestFive: Invalid starterIds list for team {teamAbbr}.");
+            return;
+        }
+
+        string bestFiveStr = string.Join(",", starterIds);
+
+        var command = Connection.CreateCommand("UPDATE Team SET best_five = ? WHERE team_abbv = ?", bestFiveStr, teamAbbr);
+        int result = command.ExecuteNonQuery();
+
+        if (result > 0)
+        {
+            Debug.Log($"[DB] Successfully updated best_five for team {teamAbbr}.");
+        }
+        else
+        {
+            Debug.LogWarning($"[DB] UpdateBestFive: Team with abbreviation '{teamAbbr}' not found.");
+        }
+    }
 }

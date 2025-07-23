@@ -19,6 +19,7 @@ public class TeamManageManager : MonoBehaviour
     private string myTeamAbbr;
     private GameObject highlightedLogoObj;
     private PlayerLine selectedPlayerLine;
+    private int _nextFocusedPlayerId = -1;
 
     private void Start()
     {
@@ -260,19 +261,121 @@ public class TeamManageManager : MonoBehaviour
         highlightedLogoObj = newLogoObj;
     }
 
-    private void ShowTeam(TeamData team)
+    private void ShowTeam(TeamData team, int focusPlayerId = -1)
     {
         currentTeam = team;
         if (teamItemUI != null)
         {
             // Clicking the team item does nothing in this manager.
-            teamItemUI.Init(team, (selectedTeam) => { /* Do Nothing */ });
+            teamItemUI.Init(team, (selectedTeam) => { /* Do Nothing */ }, focusPlayerId);
 
             teamItemUI.OnPlayerLineClicked -= OnPlayerSelected;
             teamItemUI.OnPlayerLineClicked += OnPlayerSelected;
+            teamItemUI.OnPlayerLineDoubleClicked -= OnPlayerDoubleClicked;
+            teamItemUI.OnPlayerLineDoubleClicked += OnPlayerDoubleClicked;
+            
+            // 초기 선수 선택 및 UI 업데이트
+            PlayerLine initialPlayer = teamItemUI.GetInitialSelectedPlayer();
+            if (initialPlayer != null)
+            {
+                OnPlayerSelected(initialPlayer);
+            }
         }
-        UpdateReleaseButtonVisibility();
+        else
+        {
+             UpdateReleaseButtonVisibility();
+        }
     }
+
+    private void OnPlayerDoubleClicked(PlayerLine playerLine)
+    {
+        if (currentTeam.abbreviation != myTeamAbbr) return;
+
+        bool isStarter = teamItemUI.IsStarter(playerLine.PlayerId);
+
+        if (isStarter)
+        {
+            // 주전 -> 벤치 (벤치에서 가장 적합한 선수와 교체)
+            PlayerLine bestBenchPlayer = FindBestBenchPlayerForPosition(playerLine.AssignedPosition);
+            if (bestBenchPlayer != null)
+            {
+                SwapPlayers(playerLine, bestBenchPlayer);
+            }
+        }
+        else
+        {
+            // 벤치 -> 주전 (해당 포지션의 주전과 교체)
+            PlayerLine starterToReplace = FindStarterByPosition(playerLine.Position);
+            if (starterToReplace != null)
+            {
+                SwapPlayers(starterToReplace, playerLine);
+            }
+        }
+    }
+
+    private PlayerLine FindBestBenchPlayerForPosition(string position)
+    {
+        return currentTeam.players
+            .Where(p => !teamItemUI.IsStarter(p.PlayerId))
+            .OrderByDescending(p => p.Position == position)
+            .ThenByDescending(p => p.OverallScore)
+            .FirstOrDefault();
+    }
+    
+    private PlayerLine FindStarterByPosition(string position)
+    {
+        return currentTeam.players
+            .Where(p => teamItemUI.IsStarter(p.PlayerId) && p.AssignedPosition == position)
+            .FirstOrDefault();
+    }
+
+    private void SwapPlayers(PlayerLine starter, PlayerLine substitute)
+    {
+        // 0. 새로 주전이 될 선수의 ID를 기억
+        _nextFocusedPlayerId = substitute.PlayerId;
+
+        // 1. 데이터 업데이트 (AssignedPosition 교환)
+        string starterOriginalPosition = starter.AssignedPosition;
+        starter.AssignedPosition = null;
+        substitute.AssignedPosition = starterOriginalPosition;
+
+        // 2. DB 업데이트 (best_five)
+        var starters = currentTeam.players.Where(p => p.AssignedPosition != null).ToList();
+        
+        // 포지션 코드를 기준으로 정렬 (PG-SG-SF-PF-C)
+        starters.Sort((a, b) => PositionStringToCode(a.AssignedPosition).CompareTo(PositionStringToCode(b.AssignedPosition)));
+        
+        List<int> starterIds = starters.Select(p => p.PlayerId).ToList();
+
+        LocalDbManager.Instance.UpdateBestFive(currentTeam.abbreviation, starterIds);
+
+        // 3. UI 새로고침
+        RefreshTeamDisplay();
+    }
+    private int PositionStringToCode(string pos)
+    {
+        return pos switch
+        {
+            "PG" => 1,
+            "SG" => 2,
+            "SF" => 3,
+            "PF" => 4,
+            "C" => 5,
+            _ => 99
+        };
+    }
+    private void RefreshTeamDisplay()
+    {
+        string currentTeamAbbr = currentTeam.abbreviation;
+        BuildTeamDataList();
+        TeamData refreshedTeam = displayTeams.FirstOrDefault(t => t.abbreviation == currentTeamAbbr);
+        if (refreshedTeam != null)
+        {
+            ShowTeam(refreshedTeam, _nextFocusedPlayerId);
+            _nextFocusedPlayerId = -1; // 사용 후 초기화
+        }
+    }
+
 
     private void OnPlayerSelected(PlayerLine playerLine)
     {

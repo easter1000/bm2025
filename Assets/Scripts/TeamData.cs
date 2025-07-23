@@ -9,12 +9,12 @@ public class TeamData
     public List<PlayerLine> players;
     public string teamColor;
 
-    public TeamData(int id, string name, string abbr, List<PlayerLine> playerList, string color)
+    public TeamData(int id, string name, string abbr, List<PlayerLine> playerLines, string color)
     {
         teamId = id;
         teamName = name;
         abbreviation = abbr;
-        players = playerList;
+        players = playerLines;
         teamColor = color;
     }
-} 
+}

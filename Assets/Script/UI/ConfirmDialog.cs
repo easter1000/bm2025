@@ -15,6 +15,11 @@ public class ConfirmDialog : MonoBehaviour
         if (dialogRoot != null) dialogRoot.SetActive(false);
     }
 
+    public void Show(string message, Action onYes)
+    {
+        Show(message, onYes, null);
+    }
+
     public void Show(string message, Action onYes, Action onNo)
     {
         if (dialogRoot != null) dialogRoot.SetActive(true);
@@ -28,10 +33,18 @@ public class ConfirmDialog : MonoBehaviour
             onYes?.Invoke();
         });
 
-        noButton.onClick.AddListener(() => {
-            Hide();
-            onNo?.Invoke();
-        });
+        if (onNo != null)
+        {
+            noButton.gameObject.SetActive(true);
+            noButton.onClick.AddListener(() => {
+                Hide();
+                onNo.Invoke();
+            });
+        }
+        else
+        {
+            noButton.gameObject.SetActive(false);
+        }
     }
 
     public void Hide()

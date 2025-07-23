@@ -281,8 +281,8 @@ public class SeasonSceneManager : MonoBehaviour
         }
 
         string message = $"{offer.ProposingTeam.team_name}에서 트레이드를 제안했습니다:\n\n" +
-                         $"<color=green>주는 선수: {offeredPlayer.name} (OVR: {offeredPlayer.overallAttribute})</color>\n" +
-                         $"<color=red>받는 선수: {requestedPlayer.name} (OVR: {requestedPlayer.overallAttribute})</color>\n\n" +
+                         $"<color=green>오는 선수: {offeredPlayer.name} (OVR: {offeredPlayer.overallAttribute})</color>\n" +
+                         $"<color=red>떠나는 선수: {requestedPlayer.name} (OVR: {requestedPlayer.overallAttribute})</color>\n\n" +
                          "수락하시겠습니까?";
 
         // 다이얼로그 띄우기
@@ -296,9 +296,10 @@ public class SeasonSceneManager : MonoBehaviour
                 );
 
                 // 트레이드 성공 후 후속 처리
-                Debug.Log("트레이드가 성공적으로 성사되었습니다!");
-                UpdateHeaderUI(); // 예산 등 정보 업데이트
-                onDialogClosed?.Invoke();
+                confirmDialog.Show("트레이드가 성공적으로 성사되었습니다!", () => {
+                    UpdateHeaderUI(); // 예산 등 정보 업데이트
+                    onDialogClosed?.Invoke();
+                });
             },
             onNo: () => {
                 // '아니오'를 눌렀을 때: 아무것도 안 함
@@ -317,11 +318,29 @@ public class SeasonSceneManager : MonoBehaviour
 
     private void OnQuitClicked()
     {
+        if (confirmDialog == null)
+        {
+            Debug.LogError("ConfirmDialog가 연결되지 않았습니다. 즉시 종료합니다.");
+            QuitApplication();
+            return;
+        }
+
+        confirmDialog.Show(
+            "정말로 게임을 종료하시겠습니까?",
+            onYes: () => {
+                QuitApplication();
+            },
+            onNo: () => {
+                // 아무것도 하지 않음
+            }
+        );
+    }
+
+    private void QuitApplication()
+    {
 #if UNITY_EDITOR
-        // 에디터에서는 플레이 모드를 중지
         UnityEditor.EditorApplication.isPlaying = false;
 #else
-        // 빌드된 게임에서는 애플리케이션 종료
         Application.Quit();
 #endif
     }

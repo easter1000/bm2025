@@ -54,10 +54,10 @@ public class TradeSceneManager : MonoBehaviour
     private void OnEnable()
     {
         // Start 가 이미 한 번 실행된 뒤라면, 씬이 다시 Enable 될 때마다 UI 를 재초기화한다.
-        if (_hasStarted)
-        {
-            Initialize();
-        }
+        // if (_hasStarted)
+        // {
+        //     Initialize();
+        // }
     }
 
     private void Start()
@@ -477,6 +477,11 @@ public class TradeSceneManager : MonoBehaviour
 
         // 4. UI 새로고침
         Initialize();
+        
+        // 5. 성공 다이얼로그 표시
+        confirmDialog.Show("트레이드가 성공적으로 성사되었습니다!", () => {
+            // OK 버튼 누르면 아무것도 안함
+        });
     }
 
     private List<PlayerRating> GetSelectedPlayers(List<GameObject> spawnedLines)
@@ -500,7 +505,9 @@ public class TradeSceneManager : MonoBehaviour
 
     private string FormatMoney(long amount)
     {
-        if (amount < 0) return "-";
+        if (amount < 0) {
+            return "-" + FormatMoney(-amount);
+        }
 
         string unit = string.Empty;
         double value = amount;

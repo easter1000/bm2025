@@ -41,7 +41,8 @@ public class TeamItemUI : MonoBehaviour
 
     private TeamData teamData;
     private Action<TeamData> onClickCallback;
-    public event Action<PlayerLine> OnPlayerLineClicked;
+    public event Action<madcamp3.Assets.Script.Player.PlayerLine> OnPlayerLineClicked;
+    public event Action<madcamp3.Assets.Script.Player.PlayerLine> OnPlayerLineDoubleClicked;
 
     private static readonly Color RowColorEven = new Color32(0xF2, 0xF2, 0xF2, 0xFF); // 짝수 행
     private static readonly Color RowColorOdd  = new Color32(0xE5, 0xE5, 0xE5, 0xFF); // 홀수 행
@@ -59,7 +60,7 @@ public class TeamItemUI : MonoBehaviour
         cPlayer?.gameObject.SetActive(false);
     }
     
-    public void Init(TeamData data, Action<TeamData> onClick)
+    public void Init(TeamData data, Action<TeamData> onClick, int focusPlayerId = -1)
     {
         teamData = data;
         onClickCallback = onClick;
@@ -134,6 +135,9 @@ public class TeamItemUI : MonoBehaviour
             if (plc == null) return;
             plc.OnClicked -= ShowPlayerDetail;
             plc.OnClicked += ShowPlayerDetail;
+
+            plc.OnDoubleClicked -= (pl) => OnPlayerLineDoubleClicked?.Invoke(pl);
+            plc.OnDoubleClicked += (pl) => OnPlayerLineDoubleClicked?.Invoke(pl);
 
             // 하이라이트 람다 추가 (중복 가능성 낮음)
             plc.OnClicked += (pl) => UpdatePlayerHighlight(plc.gameObject);
@@ -273,83 +277,120 @@ public class TeamItemUI : MonoBehaviour
             ShowPlayerDetail(data.players[0]);
             // FA의 경우 특정 라인 하이라이트는 생략하거나, 별도 구현 필요
         }
-
-        void ShowPlayerDetail(PlayerLine pl)
+        
+        if (focusPlayerId != -1)
         {
-            if (playerDetailUI == null || pl == null) return;
-            var rating = LocalDbManager.Instance.GetAllPlayerRatings().FirstOrDefault(r => r.player_id == pl.PlayerId);
-            if (rating != null)
+            FocusPlayer(focusPlayerId);
+        }
+    }
+
+    private void ShowPlayerDetail(madcamp3.Assets.Script.Player.PlayerLine pl)
+    {
+        if (playerDetailUI == null || pl == null) return;
+        var rating = LocalDbManager.Instance.GetAllPlayerRatings().FirstOrDefault(r => r.player_id == pl.PlayerId);
+        if (rating != null)
+        {
+            playerDetailUI.SetPlayer(rating);
+        }
+    }
+
+    // ----- 내부 메서드 : 플레이어 라인 하이라이트 -----
+    private void UpdatePlayerHighlight(GameObject newObj)
+    {
+        if (highlightedPlayerObj == newObj) return;
+
+        // 1) 기존 BorderLines 비활성화
+        if (highlightedPlayerObj != null)
+        {
+            Transform prevBorder = highlightedPlayerObj.transform.Find("BorderLines");
+            if (prevBorder != null) prevBorder.gameObject.SetActive(false);
+        }
+
+        // 2) 새 BorderLines 생성/활성화
+        if (newObj != null)
+        {
+            Transform borderT = newObj.transform.Find("BorderLines");
+            if (borderT == null)
             {
-                playerDetailUI.SetPlayer(rating);
+                GameObject borderRoot = new GameObject("BorderLines", typeof(RectTransform));
+                borderRoot.transform.SetParent(newObj.transform, false);
+                borderRoot.transform.SetAsLastSibling();
+
+                RectTransform rootRT = borderRoot.GetComponent<RectTransform>();
+                rootRT.anchorMin = Vector2.zero;
+                rootRT.anchorMax = Vector2.one;
+                const float thickness = 3f;
+                float inset = thickness * 0.5f; // 테두리 절반만큼 안쪽으로 들여 그린다
+                rootRT.offsetMin = new Vector2(inset, inset);
+                rootRT.offsetMax = new Vector2(-inset, -inset);
+
+                Color borderColor = Color.black;
+
+                void CreateLine(string name, Vector2 anchorMin, Vector2 anchorMax)
+                {
+                    GameObject line = new GameObject(name, typeof(RectTransform), typeof(Image));
+                    line.transform.SetParent(borderRoot.transform, false);
+                    RectTransform rt = line.GetComponent<RectTransform>();
+                    rt.anchorMin = anchorMin;
+                    rt.anchorMax = anchorMax;
+                    rt.offsetMin = Vector2.zero;
+                    rt.offsetMax = Vector2.zero;
+                    Image img = line.GetComponent<Image>();
+                    img.color = borderColor;
+                    img.raycastTarget = false;
+                }
+
+                // Top
+                CreateLine("Top", new Vector2(0,1), new Vector2(1,1));
+                borderRoot.transform.Find("Top").GetComponent<RectTransform>().sizeDelta = new Vector2(0, thickness);
+                // Bottom
+                CreateLine("Bottom", new Vector2(0,0), new Vector2(1,0));
+                borderRoot.transform.Find("Bottom").GetComponent<RectTransform>().sizeDelta = new Vector2(0, thickness);
+                // Left
+                CreateLine("Left", new Vector2(0,0), new Vector2(0,1));
+                borderRoot.transform.Find("Left").GetComponent<RectTransform>().sizeDelta = new Vector2(thickness, 0);
+                // Right
+                CreateLine("Right", new Vector2(1,0), new Vector2(1,1));
+                borderRoot.transform.Find("Right").GetComponent<RectTransform>().sizeDelta = new Vector2(thickness, 0);
+            }
+            else
+            {
+                borderT.gameObject.SetActive(true);
             }
         }
 
-        // ----- 내부 메서드 : 플레이어 라인 하이라이트 -----
-        void UpdatePlayerHighlight(GameObject newObj)
+        highlightedPlayerObj = newObj;
+    }
+
+    public void FocusPlayer(int playerId)
+    {
+        // 주전 선수 목록에서 찾기
+        PlayerLineController[] starterCtrls = { pgPlayer, sgPlayer, sfPlayer, pfPlayer, cPlayer };
+        foreach (var ctrl in starterCtrls)
         {
-            if (highlightedPlayerObj == newObj) return;
-
-            // 1) 기존 BorderLines 비활성화
-            if (highlightedPlayerObj != null)
+            if (ctrl != null && ctrl.Data != null && ctrl.Data.PlayerId == playerId)
             {
-                Transform prevBorder = highlightedPlayerObj.transform.Find("BorderLines");
-                if (prevBorder != null) prevBorder.gameObject.SetActive(false);
+                ShowPlayerDetail(ctrl.Data);
+                UpdatePlayerHighlight(ctrl.gameObject);
+                OnPlayerLineClicked?.Invoke(ctrl.Data);
+                return;
             }
+        }
 
-            // 2) 새 BorderLines 생성/활성화
-            if (newObj != null)
+        // 벤치 선수 목록에서 찾기
+        if (benchContent != null)
+        {
+            foreach (Transform child in benchContent)
             {
-                Transform borderT = newObj.transform.Find("BorderLines");
-                if (borderT == null)
+                var ctrl = child.GetComponent<PlayerLineController>();
+                if (ctrl != null && ctrl.Data != null && ctrl.Data.PlayerId == playerId)
                 {
-                    GameObject borderRoot = new GameObject("BorderLines", typeof(RectTransform));
-                    borderRoot.transform.SetParent(newObj.transform, false);
-                    borderRoot.transform.SetAsLastSibling();
-
-                    RectTransform rootRT = borderRoot.GetComponent<RectTransform>();
-                    rootRT.anchorMin = Vector2.zero;
-                    rootRT.anchorMax = Vector2.one;
-                    const float thickness = 3f;
-                    float inset = thickness * 0.5f; // 테두리 절반만큼 안쪽으로 들여 그린다
-                    rootRT.offsetMin = new Vector2(inset, inset);
-                    rootRT.offsetMax = new Vector2(-inset, -inset);
-
-                    Color borderColor = Color.black;
-
-                    void CreateLine(string name, Vector2 anchorMin, Vector2 anchorMax)
-                    {
-                        GameObject line = new GameObject(name, typeof(RectTransform), typeof(Image));
-                        line.transform.SetParent(borderRoot.transform, false);
-                        RectTransform rt = line.GetComponent<RectTransform>();
-                        rt.anchorMin = anchorMin;
-                        rt.anchorMax = anchorMax;
-                        rt.offsetMin = Vector2.zero;
-                        rt.offsetMax = Vector2.zero;
-                        Image img = line.GetComponent<Image>();
-                        img.color = borderColor;
-                        img.raycastTarget = false;
-                    }
-
-                    // Top
-                    CreateLine("Top", new Vector2(0,1), new Vector2(1,1));
-                    borderRoot.transform.Find("Top").GetComponent<RectTransform>().sizeDelta = new Vector2(0, thickness);
-                    // Bottom
-                    CreateLine("Bottom", new Vector2(0,0), new Vector2(1,0));
-                    borderRoot.transform.Find("Bottom").GetComponent<RectTransform>().sizeDelta = new Vector2(0, thickness);
-                    // Left
-                    CreateLine("Left", new Vector2(0,0), new Vector2(0,1));
-                    borderRoot.transform.Find("Left").GetComponent<RectTransform>().sizeDelta = new Vector2(thickness, 0);
-                    // Right
-                    CreateLine("Right", new Vector2(1,0), new Vector2(1,1));
-                    borderRoot.transform.Find("Right").GetComponent<RectTransform>().sizeDelta = new Vector2(thickness, 0);
-                }
-                else
-                {
-                    borderT.gameObject.SetActive(true);
+                    ShowPlayerDetail(ctrl.Data);
+                    UpdatePlayerHighlight(ctrl.gameObject);
+                    OnPlayerLineClicked?.Invoke(ctrl.Data);
+                    return;
                 }
             }
-
-            highlightedPlayerObj = newObj;
         }
     }
 
@@ -367,5 +408,30 @@ public class TeamItemUI : MonoBehaviour
         }
         ColorUtility.TryParseHtmlString("#FF0C0C", out Color col);
         return col;
+    }
+
+    public bool IsStarter(int playerId)
+    {
+        PlayerLineController[] starterCtrls = { pgPlayer, sgPlayer, sfPlayer, pfPlayer, cPlayer };
+        return starterCtrls.Any(ctrl => ctrl.gameObject.activeSelf && ctrl.Data != null && ctrl.Data.PlayerId == playerId);
+    }
+
+    public PlayerLine GetInitialSelectedPlayer()
+    {
+        // FA가 아닌 경우, 첫 번째 주전 선수를 반환
+        if (teamData != null && teamData.abbreviation != "FA")
+        {
+            PlayerLineController[] starterCtrls = { pgPlayer, sgPlayer, sfPlayer, pfPlayer, cPlayer };
+            if (starterCtrls.Length > 0 && starterCtrls[0] != null && starterCtrls[0].Data != null)
+            {
+                return starterCtrls[0].Data;
+            }
+        }
+        // FA이거나 주전이 없는 경우, 전체 선수 목록의 첫 번째 선수를 반환
+        else if (teamData != null && teamData.players.Count > 0)
+        {
+            return teamData.players[0];
+        }
+        return null;
     }
 } 

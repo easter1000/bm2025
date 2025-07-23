@@ -19,8 +19,9 @@ namespace madcamp3.Assets.Script.Player
         public Image BackgroundImage;
         [Header("Overall Score Background")] public Image OverallBackgroundImage;
 
-        public PlayerLine Data { get; private set; }
+        public PlayerLine Data;
         public event Action<PlayerLine> OnClicked;
+        public event Action<PlayerLine> OnDoubleClicked;
 
         /// <summary>
         /// 전달된 PlayerLine 데이터를 UI 컴포넌트에 적용합니다.
@@ -73,7 +74,13 @@ namespace madcamp3.Assets.Script.Player
 
         public void OnPointerClick(PointerEventData eventData)
         {
-            if (Data != null)
+            if (Data == null) return;
+
+            if (eventData.clickCount == 2)
+            {
+                OnDoubleClicked?.Invoke(Data);
+            }
+            else
             {
                 OnClicked?.Invoke(Data);
             }

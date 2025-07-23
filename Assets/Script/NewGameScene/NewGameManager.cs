@@ -14,7 +14,6 @@ public class NewGameManager : MonoBehaviour
     private enum Step
     {
         Prologue,
-        NameInput,
         TeamSelection,
         TeamIntro
     }
@@ -22,17 +21,12 @@ public class NewGameManager : MonoBehaviour
     [SerializeField] private Step initialStep = Step.Prologue;
 
     [Header("Panels")] public GameObject prologuePanel; // 이미지+나레이션
-    public GameObject nameInputPanel;
     public GameObject teamSelectionPanel;
     public GameObject teamIntroPanel;
 
     [Header("Prologue")]
     public NarrationTyper prologueTyper;
     [TextArea] public string prologueText = "당신은 이번 시즌 새로 부임한 감독입니다...";
-
-    [Header("Name Input")]
-    public TMP_InputField coachNameInputField;
-    public Button coachNameConfirmButton;
 
     [Header("Team Selection")]
     public Transform teamListContent; // ScrollView의 Content
@@ -77,7 +71,6 @@ public class NewGameManager : MonoBehaviour
     private void Start()
     {
         InitDummyTeams();
-        coachNameConfirmButton.onClick.AddListener(OnNameConfirmed);
         // Confirm dialog will handle confirmation; no global confirm button
         // ScrollView 레이아웃 설정 (한 번만)
         ConfigureTeamListLayout();
@@ -95,7 +88,6 @@ public class NewGameManager : MonoBehaviour
     {
         currentStep = step;
         prologuePanel.SetActive(step == Step.Prologue);
-        nameInputPanel.SetActive(step == Step.NameInput);
         teamSelectionPanel.SetActive(step == Step.TeamSelection);
         teamIntroPanel.SetActive(step == Step.TeamIntro);
 
@@ -105,8 +97,6 @@ public class NewGameManager : MonoBehaviour
                 if (prologueContinueButton) prologueContinueButton.gameObject.SetActive(false);
                 prologueTyper.Play(prologueText, ShowPrologueContinue);
                 break;
-            case Step.NameInput:
-                break;
             case Step.TeamSelection:
                 PopulateTeamList();
                 break;
@@ -115,17 +105,6 @@ public class NewGameManager : MonoBehaviour
                 PlayTeamIntro();
                 break;
         }
-    }
-
-    #endregion
-
-    #region Name Input
-
-    private void OnNameConfirmed()
-    {
-        if (string.IsNullOrWhiteSpace(coachNameInputField.text)) return;
-        // 이름 저장 후 팀 인트로로 이동
-        SwitchStep(Step.TeamIntro);
     }
 
     #endregion
@@ -277,11 +256,9 @@ public class NewGameManager : MonoBehaviour
     {
         if (selectedTeam == null) return;
         
-        // 1. 유저 정보 저장
-        string coachName = coachNameInputField.text;
         string teamAbbr = selectedTeam.abbreviation;
         int season = 2025;
-        LocalDbManager.Instance.SaveOrUpdateUser(coachName, teamAbbr, season);
+        LocalDbManager.Instance.SaveOrUpdateUser(teamAbbr, season);
         
         // 2. [핵심 추가] 모든 팀의 로스터를 15명으로 조정
         RosterManager.AdjustAllRostersToSeasonStart();
@@ -337,11 +314,10 @@ public class NewGameManager : MonoBehaviour
             return;
         }
 
-        string coachName = coachNameInputField != null ? coachNameInputField.text : string.Empty;
         string teamAbbr = selectedTeam.abbreviation;
         int season = 2025;
 
-        LocalDbManager.Instance.SaveOrUpdateUser(coachName, teamAbbr, season);
+        LocalDbManager.Instance.SaveOrUpdateUser(teamAbbr, season);
     }
 
     // 새 시즌을 초기화하고 스케줄을 생성한다.

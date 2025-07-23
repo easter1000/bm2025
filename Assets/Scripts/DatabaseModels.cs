@@ -98,7 +98,6 @@ public class PlayerStat
 public class User
 {
     [PrimaryKey, AutoIncrement] public int Id { get; set; }
-    public string CoachName { get; set; }
     public string SelectedTeamAbbr { get; set; }
     public int CurrentSeason { get; set; }
     public string CurrentDate { get; set; }
