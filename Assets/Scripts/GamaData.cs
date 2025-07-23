@@ -97,6 +97,13 @@ public class GameState
     public string AwayTeamAbbr { get; set; } // [추가] 어웨이팀 약칭
     public int HomeScore { get; set; }
     public int AwayScore { get; set; }
+
+    // --- [추가] 아래 속성들 복구 ---
+    public int Quarter { get; set; } = 1;
+    public float GameClockSeconds { get; set; } = 720f; // 12분
+    public float ShotClockSeconds { get; set; } = 24f;
+    public int PossessingTeamId { get; set; } = 0; // 0: Home, 1: Away
+    
     public GamePlayer LastPasser { get; set; } = null; 
     public GamePlayer PotentialAssister { get; set; } = null;
 }

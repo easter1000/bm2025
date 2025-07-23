@@ -48,6 +48,9 @@ public class UIManager : MonoBehaviour
     [Header("Game Simulator")]
     [SerializeField] private GameSimulator gameSimulator;
 
+    [Header("Court & Puck References")]
+    public PlayerPuck playerPuckPrefab; // [추가] 프리팹 변수 복구
+
     private Dictionary<int, PlayerPuck> _playerPucks = new Dictionary<int, PlayerPuck>();
     private Dictionary<string, Color> _teamColors = new Dictionary<string, Color>();
     private int _userTeamId = -1; // [추가]
@@ -142,6 +145,12 @@ public class UIManager : MonoBehaviour
         }
     }
 
+    // [추가] PlayerPuck이 호출할 수 있도록 GetUserTeamId 메서드 추가
+    public int GetUserTeamId()
+    {
+        return _userTeamId;
+    }
+
     public void RequestManualSubstitution(PlayerPuck playerInPuck, PlayerPuck playerOutPuck)
     {
         if (gameSimulator != null)
@@ -159,9 +168,7 @@ public class UIManager : MonoBehaviour
         }
         _playerPucks.Clear();
 
-        // 팀 컬러 정보 가져오기
-        TeamColors teamColors = FindFirstObjectByType<TeamColors>();
-
+        // [수정] TeamColors 클래스 대신 내부 GetTeamColor 메서드 사용
         // 홈팀 선수들 배치
         foreach (var player in homeRoster)
         {
@@ -171,9 +178,9 @@ public class UIManager : MonoBehaviour
 
             GameObject puckObj = Instantiate(playerPuckPrefab.gameObject, parentPanel);
             PlayerPuck puckComponent = puckObj.GetComponent<PlayerPuck>();
-            if (puckComponent != null && teamColors != null)
+            if (puckComponent != null)
             {
-                puckComponent.Setup(player, teamColors.GetTeamColor(gameSimulator.CurrentState.HomeTeamAbbr));
+                puckComponent.Setup(player, GetTeamColor(gameSimulator.CurrentState.HomeTeamAbbr));
                 _playerPucks.Add(player.Rating.player_id, puckComponent);
             }
         }
@@ -190,9 +197,9 @@ public class UIManager : MonoBehaviour
 
             GameObject puckObj = Instantiate(playerPuckPrefab.gameObject, parentPanel);
             PlayerPuck puckComponent = puckObj.GetComponent<PlayerPuck>();
-            if (puckComponent != null && teamColors != null)
+            if (puckComponent != null)
             {
-                puckComponent.Setup(player, teamColors.GetTeamColor(gameSimulator.CurrentState.AwayTeamAbbr));
+                puckComponent.Setup(player, GetTeamColor(gameSimulator.CurrentState.AwayTeamAbbr));
                 _playerPucks.Add(player.Rating.player_id, puckComponent);
             }
         }
@@ -279,13 +286,12 @@ public class UIManager : MonoBehaviour
                 _playerPucks.Remove(playerOut.Rating.player_id);
             }
 
-            // 2. 코트로 들어오는 선수 퍽 새로 생성
-            TeamColors teamColors = FindFirstObjectByType<TeamColors>();
+            // [수정] TeamColors 클래스 대신 내부 GetTeamColor 메서드 사용
             GameObject puckObj = Instantiate(playerPuckPrefab.gameObject, courtPanel);
             PlayerPuck puckComponent = puckObj.GetComponent<PlayerPuck>();
-            if (puckComponent != null && teamColors != null)
+            if (puckComponent != null)
             {
-                puckComponent.Setup(playerIn, teamColors.GetTeamColor(gameSimulator.CurrentState.AwayTeamAbbr));
+                puckComponent.Setup(playerIn, GetTeamColor(gameSimulator.CurrentState.AwayTeamAbbr));
                 _playerPucks.Add(playerIn.Rating.player_id, puckComponent);
             }
         }
