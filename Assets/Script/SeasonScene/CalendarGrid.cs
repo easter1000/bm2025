@@ -118,7 +118,16 @@ public class CalendarGrid : MonoBehaviour
 
         // 3) 셀 생성
         string userTeamAbbr = LocalDbManager.Instance.GetUser()?.SelectedTeamAbbr;
-        DateTime today = SeasonManager.Instance.GetCurrentDate(); // '오늘' 날짜 가져오기
+        
+        // '오늘' 날짜를 User 테이블에서 직접 가져오기
+        string userDateStr = LocalDbManager.Instance.GetUser()?.CurrentDate;
+        DateTime today = DateTime.MinValue; // 비교를 위해 초기값 설정
+        if (!string.IsNullOrEmpty(userDateStr) && DateTime.TryParse(userDateStr, out DateTime parsedDate))
+        {
+            today = parsedDate.Date;
+        }
+
+        CalendarCell todayCell = null; // 오늘 날짜에 해당하는 셀을 저장할 변수
 
         for (int slot = 0; slot < TOTAL_SLOTS; slot++)
         {
@@ -128,7 +137,7 @@ public class CalendarGrid : MonoBehaviour
             if (dayNum >= 1 && dayNum <= daysInMonth)
             {
                 DateTime cellDate = new DateTime(_currentYear, _currentMonth, dayNum);
-                bool isToday = (cellDate.Date == today.Date); // 오늘 날짜인지 확인
+                bool isToday = (today != DateTime.MinValue && cellDate.Date == today);
 
                 // 날짜 문자열 yyyy-MM-dd
                 string dateStr = cellDate.ToString("yyyy-MM-dd");
@@ -157,6 +166,11 @@ public class CalendarGrid : MonoBehaviour
 
                 cell.Configure(dayNum, _currentMonth, _currentYear, isToday, displayLogo, isUserGame);
 
+                if (isToday)
+                {
+                    todayCell = cell; // 오늘 날짜 셀 저장
+                }
+
                 // --- Handle click event ---
                 cell.OnCellClicked += (date) => HandleCellClicked(cell, date);
             }
@@ -164,6 +178,12 @@ public class CalendarGrid : MonoBehaviour
             {
                 cell.Configure(0, 0, 0, false, null, false);
             }
+        }
+
+        // 모든 셀이 생성된 후, 오늘 날짜의 셀을 자동으로 클릭 처리
+        if (todayCell != null)
+        {
+            HandleCellClicked(todayCell, today);
         }
 
         if (monthLabel)
@@ -217,11 +237,17 @@ public class CalendarGrid : MonoBehaviour
         cell.SetSelected(true);
         _selectedCell = cell;
 
-        // '오늘' 날짜인지 확인하여 버튼 표시 여부 결정
-        DateTime today = SeasonManager.Instance.GetCurrentDate();
+        // '오늘' 날짜를 User 테이블에서 직접 가져와 버튼 표시 여부 결정
+        string userDateStr = LocalDbManager.Instance.GetUser()?.CurrentDate;
+        DateTime today = DateTime.MinValue;
+        if (!string.IsNullOrEmpty(userDateStr) && DateTime.TryParse(userDateStr, out DateTime parsedDate))
+        {
+            today = parsedDate.Date;
+        }
+
         if (advanceDayButton != null)
         {
-            advanceDayButton.gameObject.SetActive(date.Date == today.Date);
+            advanceDayButton.gameObject.SetActive(today != DateTime.MinValue && date.Date == today);
         }
 
         // ScheduleView 업데이트
@@ -242,7 +268,20 @@ public class CalendarGrid : MonoBehaviour
 
     private void OnAdvanceDayClicked()
     {
-        DateTime today = SeasonManager.Instance.GetCurrentDate();
+        // '오늘' 날짜를 User 테이블에서 직접 가져옴
+        string userDateStr = LocalDbManager.Instance.GetUser()?.CurrentDate;
+        DateTime today = DateTime.MinValue;
+        if (!string.IsNullOrEmpty(userDateStr) && DateTime.TryParse(userDateStr, out DateTime parsedDate))
+        {
+            today = parsedDate.Date;
+        }
+
+        if (today == DateTime.MinValue)
+        {
+            Debug.LogError("OnAdvanceDayClicked: 유효한 사용자 날짜를 가져올 수 없습니다.");
+            return;
+        }
+
         string userTeamAbbr = LocalDbManager.Instance.GetUser()?.SelectedTeamAbbr;
 
         if (string.IsNullOrEmpty(userTeamAbbr)) return;

@@ -61,12 +61,12 @@ public class Condition_IsGoodPassOpportunity : Node
     // GamePlayer 타입을 GamaData.cs의 것으로 변경
     public override NodeState Evaluate(IGameSimulator sim, GamePlayer player)
     {
-        // 패스 빈도 현실화: 기본 확률을 40%로 약간 하향 조정하여 어시스트 수 감소 유도
-        float passTendency = 40f; 
-        passTendency += (player.Rating.passIQ - 80); 
+        // 패스 빈도 현실화: 기본 확률을 25%로 대폭 하향 조정
+        float passTendency = 25f; 
+        passTendency += (player.Rating.passIQ - 85) * 1.5f; // passIQ가 85 이상일 때만 패스 성향 증가
 
-        // [에이스 보정] overallAttribute가 높은 선수는 슛을 더 우선하도록 패스 성향을 감소시킴
-        float overallModifier = (player.Rating.overallAttribute - 85) * 1.5f;
+        // [에이스 보정 강화] overallAttribute가 높은 선수는 슛을 더 우선하도록 패스 성향을 대폭 감소
+        float overallModifier = (player.Rating.overallAttribute - 85) * 2.5f;
         passTendency -= Mathf.Max(0, overallModifier);
 
         if (UnityEngine.Random.Range(0, 100) < passTendency) return NodeState.SUCCESS;
@@ -135,8 +135,8 @@ public class Action_Try3PointShot : Node
         var shooterRating = sim.GetAdjustedRating(player);
         var defenderRating = sim.GetAdjustedRating(defender);
 
-        // 1. 블락 확률 계산
-        float blockChance = (defenderRating.block - 70) * 0.4f;
+        // 1. 블락 확률 계산 (확률 상향)
+        float blockChance = (defenderRating.block - 70) * 0.6f;
         if (Random.Range(0, 100) < blockChance)
         {
             sim.ResolveBlock(player, defender);
@@ -173,7 +173,7 @@ public class Action_Try3PointShot : Node
             sim.ResolveRebound(player);
             sim.CurrentState.LastPasser = null; 
         }
-        sim.ConsumeTime(UnityEngine.Random.Range(4f, 7f));
+        sim.ConsumeTime(UnityEngine.Random.Range(2f, 5f)); // 시간 소모 단축
         return NodeState.SUCCESS;
     }
 }
@@ -187,9 +187,16 @@ public class Action_DriveAndFinish : Node
         var shooterRating = sim.GetAdjustedRating(player);
         var defenderRating = sim.GetAdjustedRating(defender);
         
-        // 1. 스틸/턴오버 확률 계산
-        // ballHandle 80, steal 80일 때 약 3.5% 스틸 확률. 경기당 4~5개 기대.
-        float turnoverChance = 3.5f + (defenderRating.steal - shooterRating.ballHandle) * 0.2f; 
+        // 1a. 비-스틸 턴오버 확률 (드리블 실수 등)
+        float selfTurnoverChance = Mathf.Max(0, 3.0f - (shooterRating.ballHandle - 75) * 0.15f);
+        if (Random.Range(0, 100) < selfTurnoverChance)
+        {
+            sim.ResolveTurnover(player, null, false); // 수비수 없는 턴오버
+            return NodeState.SUCCESS;
+        }
+
+        // 1b. 스틸/턴오버 확률 계산 (확률 대폭 상향)
+        float turnoverChance = 8.0f + (defenderRating.steal - shooterRating.ballHandle) * 0.4f; 
         if (Random.Range(0, 100) < turnoverChance)
         {
             sim.ResolveTurnover(player, defender, true); // 스틸에 의한 턴오버
@@ -206,8 +213,8 @@ public class Action_DriveAndFinish : Node
             return sim.ResolveShootingFoul(player, defender, 2);
         }
 
-        // 3. 블락 확률 계산
-        float blockChance = (defenderRating.block - 60) * 0.5f;
+        // 3. 블락 확률 계산 (확률 대폭 상향)
+        float blockChance = (defenderRating.block - 55) * 0.9f;
         if (Random.Range(0, 100) < blockChance)
         {
             sim.ResolveBlock(player, defender);
@@ -244,7 +251,7 @@ public class Action_DriveAndFinish : Node
             sim.ResolveRebound(player);
             sim.CurrentState.LastPasser = null;
         }
-        sim.ConsumeTime(UnityEngine.Random.Range(5f, 8f));
+        sim.ConsumeTime(UnityEngine.Random.Range(5f, 8f)); // 시간 소모 원복
         return NodeState.SUCCESS;
     }
 }
@@ -260,8 +267,8 @@ public class Action_TryMidRangeShot : Node
         var shooterRating = sim.GetAdjustedRating(player);
         var defenderRating = sim.GetAdjustedRating(defender);
 
-        // 1. 블락 확률 계산
-        float blockChance = (defenderRating.block - 75) * 0.35f;
+        // 1. 블락 확률 계산 (확률 대폭 상향)
+        float blockChance = (defenderRating.block - 70) * 0.7f;
         if (Random.Range(0, 100) < blockChance)
         {
             sim.ResolveBlock(player, defender);
@@ -297,7 +304,7 @@ public class Action_TryMidRangeShot : Node
             sim.ResolveRebound(player);
             sim.CurrentState.LastPasser = null;
         }
-        sim.ConsumeTime(UnityEngine.Random.Range(4f, 7f));
+        sim.ConsumeTime(UnityEngine.Random.Range(4f, 7f)); // 시간 소모 원복
         return NodeState.SUCCESS;
     }
 }
@@ -360,13 +367,20 @@ public class Action_PassToBestTeammate : Node
             return NodeState.FAILURE;
         }
         
-        // 1. 패스 중 스틸/턴오버 확률 계산
-        var defender = sim.GetRandomDefender(player.TeamId);
+        // 1a. 비-스틸 턴오버 확률 (패스 미스 등)
         var passerRating = sim.GetAdjustedRating(player);
+        float selfTurnoverChance = Mathf.Max(0, 2.5f - (passerRating.passIQ - 75) * 0.1f);
+        if (Random.Range(0, 100) < selfTurnoverChance)
+        {
+            sim.ResolveTurnover(player, null, false); // 수비수 없는 턴오버
+            return NodeState.SUCCESS;
+        }
+        
+        // 1b. 패스 중 스틸/턴오버 확률 계산 (확률 대폭 상향)
+        var defender = sim.GetRandomDefender(player.TeamId);
         var defenderRating = sim.GetAdjustedRating(defender);
 
-        // passIQ 80, steal 80일 때 약 2.5% 스틸 확률. 경기당 3~4개 기대.
-        float turnoverChance = 2.5f + (defenderRating.steal - passerRating.passIQ) * 0.15f; 
+        float turnoverChance = 6.0f + (defenderRating.steal - passerRating.passIQ) * 0.35f; 
         if (Random.Range(0, 100) < turnoverChance)
         {
             sim.ResolveTurnover(player, defender, true); // 스틸에 의한 턴오버
@@ -395,7 +409,7 @@ public class Action_PassToBestTeammate : Node
         sim.CurrentState.LastPasser = bestTeammate; // 공을 받을 선수(bestTeammate)를 다음 볼 핸들러로 저장
         sim.AddLog($"{player.Rating.name} passes to {bestTeammate.Rating.name}.");
         
-        sim.ConsumeTime(UnityEngine.Random.Range(2f, 5f));
+        sim.ConsumeTime(UnityEngine.Random.Range(2f, 5f)); // 패스 시간은 약간 단축된 상태로 유지
         
         return NodeState.SUCCESS;
     }
@@ -416,16 +430,16 @@ public class Action_TryForced3PointShot : Node
         var defenderRating = sim.GetAdjustedRating(defender);
 
         // 1. 블락 확률 계산 (압박 상황에서 블락 당할 확률 소폭 증가)
-        float blockChance = (defenderRating.block - 70) * 0.45f;
+        float blockChance = (defenderRating.block - 65) * 0.85f; // 확률 상향
         if (Random.Range(0, 100) < blockChance)
         {
             sim.ResolveBlock(player, defender);
             return NodeState.SUCCESS;
         }
 
-        // 2. 슛 성공률 계산
-        float successChance = 25f + (shooterRating.threePointShot - (defenderRating.perimeterDefense * 1.35f)) * 0.8f;
-        successChance = Mathf.Clamp(successChance, 5f, 75f);
+        // 2. 슛 성공률 계산 (기본 성공률은 낮게, 최대 성공률은 50%로 제한)
+        float successChance = 20f + (shooterRating.threePointShot - (defenderRating.perimeterDefense * 1.35f)) * 0.8f;
+        successChance = Mathf.Clamp(successChance, 5f, 50f);
 
         sim.AddLog($"FORCED 3-pointer by {player.Rating.name} over {defender.Rating.name}. Chance: {successChance:F1}%");
 
@@ -453,7 +467,7 @@ public class Action_TryForced3PointShot : Node
             sim.ResolveRebound(player);
             sim.CurrentState.LastPasser = null; 
         }
-        sim.ConsumeTime(UnityEngine.Random.Range(4f, 7f));
+        sim.ConsumeTime(UnityEngine.Random.Range(4f, 7f)); // 시간 소모 원복
         return NodeState.SUCCESS;
     }
 }
@@ -468,8 +482,16 @@ public class Action_TryForcedDrive : Node
         var shooterRating = sim.GetAdjustedRating(player);
         var defenderRating = sim.GetAdjustedRating(defender);
 
-        // 1. 스틸/턴오버 확률 계산
-        float turnoverChance = 4.0f + (defenderRating.steal - shooterRating.ballHandle) * 0.2f;
+        // 1a. 비-스틸 턴오버 확률 (압박 상황, 확률 증가)
+        float selfTurnoverChance = Mathf.Max(0, 4.0f - (shooterRating.ballHandle - 75) * 0.15f);
+        if (Random.Range(0, 100) < selfTurnoverChance)
+        {
+            sim.ResolveTurnover(player, null, false);
+            return NodeState.SUCCESS;
+        }
+
+        // 1b. 스틸/턴오버 확률 계산 (압박 상황, 확률 대폭 상향)
+        float turnoverChance = 10.0f + (defenderRating.steal - shooterRating.ballHandle) * 0.4f;
         if (Random.Range(0, 100) < turnoverChance)
         {
             sim.ResolveTurnover(player, defender, true);
@@ -486,18 +508,18 @@ public class Action_TryForcedDrive : Node
             return sim.ResolveShootingFoul(player, defender, 2);
         }
 
-        // 3. 블락 확률 계산
-        float blockChance = (defenderRating.block - 60) * 0.55f;
+        // 3. 블락 확률 계산 (압박 상황, 확률 대폭 상향)
+        float blockChance = (defenderRating.block - 55) * 1.0f;
         if (Random.Range(0, 100) < blockChance)
         {
             sim.ResolveBlock(player, defender);
             return NodeState.SUCCESS;
         }
 
-        // 4. 슛 성공률 계산
+        // 4. 슛 성공률 계산 (기본 성공률은 낮게, 최대 성공률은 50%로 제한)
         float offensePower = (shooterRating.layup + shooterRating.drivingDunk) / 2f;
-        float successChance = 40f + (offensePower - (defenderRating.interiorDefense * 1.4f)) * 0.9f;
-        successChance = Mathf.Clamp(successChance, 10f, 80f);
+        float successChance = 35f + (offensePower - (defenderRating.interiorDefense * 1.4f)) * 0.9f;
+        successChance = Mathf.Clamp(successChance, 10f, 50f);
         
         sim.AddLog($"FORCED drive by {player.Rating.name} past {defender.Rating.name}. Chance: {successChance:F1}%");
 
@@ -524,7 +546,7 @@ public class Action_TryForcedDrive : Node
             sim.ResolveRebound(player);
             sim.CurrentState.LastPasser = null;
         }
-        sim.ConsumeTime(UnityEngine.Random.Range(5f, 8f));
+        sim.ConsumeTime(UnityEngine.Random.Range(5f, 8f)); // 시간 소모 원복
         return NodeState.SUCCESS;
     }
 }
@@ -539,17 +561,17 @@ public class Action_TryForcedMidRangeShot : Node
         var shooterRating = sim.GetAdjustedRating(player);
         var defenderRating = sim.GetAdjustedRating(defender);
 
-        // 1. 블락 확률 계산
-        float blockChance = (defenderRating.block - 75) * 0.4f;
+        // 1. 블락 확률 계산 (압박 상황, 확률 대폭 상향)
+        float blockChance = (defenderRating.block - 70) * 0.75f;
         if (Random.Range(0, 100) < blockChance)
         {
             sim.ResolveBlock(player, defender);
             return NodeState.SUCCESS;
         }
 
-        // 2. 슛 성공률 계산
-        float successChance = 35f + (shooterRating.midRangeShot - (defenderRating.perimeterDefense * 1.35f)) * 0.85f;
-        successChance = Mathf.Clamp(successChance, 15f, 75f);
+        // 2. 슛 성공률 계산 (기본 성공률은 낮게, 최대 성공률은 50%로 제한)
+        float successChance = 30f + (shooterRating.midRangeShot - (defenderRating.perimeterDefense * 1.35f)) * 0.85f;
+        successChance = Mathf.Clamp(successChance, 15f, 50f);
 
         sim.AddLog($"FORCED mid-range by {player.Rating.name} against {defender.Rating.name}. Chance: {successChance:F1}%");
         
@@ -576,7 +598,7 @@ public class Action_TryForcedMidRangeShot : Node
             sim.ResolveRebound(player);
             sim.CurrentState.LastPasser = null;
         }
-        sim.ConsumeTime(UnityEngine.Random.Range(4f, 7f));
+        sim.ConsumeTime(UnityEngine.Random.Range(4f, 7f)); // 시간 소모 원복
         return NodeState.SUCCESS;
     }
 }

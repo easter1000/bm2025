@@ -31,9 +31,11 @@ public class BackgroundGameSimulator : IGameSimulator
 
         BuildOffenseBehaviorTree();
 
-        // 4쿼터 또는 동점일 경우 연장전 계속 진행
-        while (CurrentState.Quarter <= 4 || (CurrentState.HomeScore == CurrentState.AwayScore))
+        // 4쿼터 또는 동점일 경우 연장전 계속 진행 (종료 조건 수정)
+        while (CurrentState.Quarter < 4 || (CurrentState.Quarter >= 4 && CurrentState.HomeScore == CurrentState.AwayScore))
         {
+            CurrentState.Quarter++;
+            
             // 쿼터 초기화
             CurrentState.GameClockSeconds = (CurrentState.Quarter > 4) ? 300f : 720f; // 연장전 5분
             CurrentState.ShotClockSeconds = 24f;
@@ -85,8 +87,6 @@ public class BackgroundGameSimulator : IGameSimulator
                     CurrentState.LastPasser = null;
                 }
             }
-            
-            CurrentState.Quarter++;
         }
 
         var allPlayers = _homeTeamRoster.Concat(_awayTeamRoster).ToList();

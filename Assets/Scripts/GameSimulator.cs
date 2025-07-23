@@ -22,7 +22,7 @@ public class GameSimulator : MonoBehaviour, IGameSimulator
     public float substitutionCheckInterval = 5.0f;
 
     [Header("Game State")]
-    public GameState CurrentState { get; private set; } // GamaData.cs의 GameState 사용
+    public GameState CurrentState { get; private set; } // GamaData.cs의 GameState 사용 
     
     // GamePlayer, GameState는 GamaData.cs의 것을 사용하므로 이벤트 타입 변경
     public static event Action<GameState> OnGameStateUpdated;
@@ -118,9 +118,9 @@ public class GameSimulator : MonoBehaviour, IGameSimulator
         if (CurrentState.GameClockSeconds <= 0)
         {
             AddLog($"--- End of Quarter {CurrentState.Quarter} ---");
-            CurrentState.Quarter++;
 
-            if (CurrentState.Quarter > 4)
+            // 4쿼터 이상 진행됐고, 점수가 동점이 아닐 경우에만 게임 종료
+            if (CurrentState.Quarter >= 4 && CurrentState.HomeScore != CurrentState.AwayScore)
             {
                 _status = SimStatus.Finished;
                 AddLog("--- FINAL ---");
@@ -132,8 +132,9 @@ public class GameSimulator : MonoBehaviour, IGameSimulator
                 foreach (var p in allPlayers)
                 {
                     int minutesPlayed = (int)(p.Stats.MinutesPlayedInSeconds / 60);
-                    // 부상당한 선수는 isEjected = true 상태
-                    LocalDbManager.Instance.UpdatePlayerAfterGame(p.Rating.player_id, minutesPlayed, p.IsEjected, GenerateInjuryDuration());
+                    bool isInjured = p.IsEjected && p.Stats.PersonalFouls < 6;
+                    int injuryDuration = isInjured ? GenerateInjuryDuration() : 0;
+                    LocalDbManager.Instance.UpdatePlayerAfterGame(p.Rating.player_id, minutesPlayed, isInjured, injuryDuration);
                 }
 
                 var finalPlayerStats = allPlayers
@@ -150,10 +151,12 @@ public class GameSimulator : MonoBehaviour, IGameSimulator
                 OnGameFinished?.Invoke(result);
                 this.enabled = false;
             }
-            else
+            else // 4쿼터지만 동점이거나, 1~3쿼터가 끝난 경우
             {
-                CurrentState.GameClockSeconds = 720f;
+                CurrentState.Quarter++;
+                CurrentState.GameClockSeconds = (CurrentState.Quarter > 4) ? 300f : 720f; // 연장전은 5분(300초)
                 CurrentState.ShotClockSeconds = 24f;
+                CurrentState.LastPasser = null; // 쿼터 시작 시 볼 핸들러 초기화
                 AddLog($"--- Start of Quarter {CurrentState.Quarter} ---");
             }
         }
@@ -635,7 +638,6 @@ public class GameSimulator : MonoBehaviour, IGameSimulator
         }
         else
         {
-            offensivePlayer.Stats.Turnovers++;
             AddLog($"{offensivePlayer.Rating.name} commits a turnover.");
             AddUILog($"{offensivePlayer.Rating.name} commits a turnover", offensivePlayer);
         }

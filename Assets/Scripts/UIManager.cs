@@ -199,10 +199,11 @@ public class UIManager : MonoBehaviour
     // [수정됨] 경기 시간 및 쿼터 표시 방식 변경
     private void UpdateScoreboard(GameState state)
     {
+        if (state == null) return;
         homeScoreText.text = state.HomeScore.ToString();
         awayScoreText.text = state.AwayScore.ToString();
 
-        // 쿼터를 1Q, 2Q, 3Q, 4Q, 연장(OT)으로 표시
+        // 쿼터 표시를 1Q, 2Q, 3Q, 4Q, OT1, OT2... 로 변경
         if (state.Quarter <= 4)
         {
             periodText.text = $"{state.Quarter}Q";
