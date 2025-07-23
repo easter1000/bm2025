@@ -47,6 +47,9 @@ public class SeasonManager : MonoBehaviour
         _instance = this;
         DontDestroyOnLoad(gameObject);
 
+        _dbManager = LocalDbManager.Instance;
+        _tradeManager = FindAnyObjectByType<TradeManager>();
+
         SceneManager.sceneLoaded += OnSceneLoaded;
     }
 
@@ -68,8 +71,7 @@ public class SeasonManager : MonoBehaviour
 
     void Start()
     {
-        _dbManager = LocalDbManager.Instance;
-        _tradeManager = FindAnyObjectByType<TradeManager>();
+        // _dbManager와 _tradeManager 초기화 코드를 Awake로 이동
     }
 
     public void InitializeNewSeason(int season, string userTeamAbbr)
@@ -103,11 +105,6 @@ public class SeasonManager : MonoBehaviour
         return DateTime.Now; // Fallback
     }
 
-    private void AdvanceDay()
-    {
-        // 자동 시간 흐름 로직 제거
-    }
-
     /// <summary>
     /// AI 팀들이 서로 트레이드를 시도하고, 유저에게 제안할 트레이드 목록을 반환.
     /// </summary>
@@ -116,9 +113,8 @@ public class SeasonManager : MonoBehaviour
     {
         if (_tradeManager == null) 
         {
-            Debug.LogError("TradeManager is not initialized!");
-            _tradeManager = FindAnyObjectByType<TradeManager>();
-            if (_tradeManager == null) return new List<TradeOffer>();
+            Debug.LogError("TradeManager is not initialized! This should not happen if SeasonManager is set up correctly.");
+            return new List<TradeOffer>();
         }
         if (_dbManager == null) _dbManager = LocalDbManager.Instance;
 
@@ -155,7 +151,7 @@ public class SeasonManager : MonoBehaviour
         {
             for (int j = i + 1; j < aiTeams.Count; j++)
             {
-                if (rand.Next(0, 100) < 5) // 5% 확률로 트레이드 시도
+                if (rand.Next(0, 100) < 5)
                 {
                     ProposeFairTradeBetweenTeams(aiTeams[i], aiTeams[j], teamFinances, rand);
                 }
@@ -170,13 +166,13 @@ public class SeasonManager : MonoBehaviour
             var shuffledAiTeams = aiTeams.OrderBy(t => rand.Next()).ToList();
             foreach (var aiTeam in shuffledAiTeams)
             {
-                if (rand.Next(0, 100) < 3) // 3% 확률
+                if (rand.Next(0, 100) < 100)
                 {
                     var offer = GenerateAndProposeSmartTrade(aiTeam, teamFinances[aiTeam.team_abbv], userTeam, teamFinances[userTeam.team_abbv], rand, true);
                     if (offer != null)
                     {
                         userTradeOffers.Add(offer);
-                        break; // 하루에 최대 하나의 제안만 하도록 루프를 탈출
+                        break;
                     }
                 }
             }

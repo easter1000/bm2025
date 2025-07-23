@@ -31,24 +31,19 @@ public class BackgroundGameSimulator : IGameSimulator
 
     public GameResult SimulateFullGame(Schedule gameToPlay)
     {
-        //Debug.Log($"[Sim-Debug] Starting simulation for {gameToPlay.AwayTeamAbbr} @ {gameToPlay.HomeTeamAbbr}");
         _random = new System.Random(); // 시뮬레이션 시작 시마다 초기화
         if (!SetupGame(gameToPlay))
         {
-            //Debug.LogError($"백그라운드 게임 설정 실패: {gameToPlay.HomeTeamAbbr} vs {gameToPlay.AwayTeamAbbr}. 선수가 부족할 수 있습니다.");
             return new GameResult { HomeScore = 0, AwayScore = 0, PlayerStats = new List<PlayerStat>() };
         }
-        //Debug.Log($"[Sim-Debug] Game setup complete.");
 
         BuildOffenseBehaviorTree();
-        //Debug.Log($"[Sim-Debug] Behavior tree built.");
 
 
         // 4쿼터 또는 동점일 경우 연장전 계속 진행 (종료 조건 수정)
         while (CurrentState.Quarter < 4 || (CurrentState.Quarter >= 4 && CurrentState.HomeScore == CurrentState.AwayScore))
         {
             CurrentState.Quarter++;
-            //Debug.Log($"[Sim-Debug] ---- Quarter {CurrentState.Quarter} Start ----");
             
             // 쿼터 초기화
             CurrentState.GameClockSeconds = (CurrentState.Quarter > 4) ? 300f : 720f; // 연장전 5분
@@ -58,7 +53,6 @@ public class BackgroundGameSimulator : IGameSimulator
             // 쿼터 진행 루프
             while(CurrentState.GameClockSeconds > 0)
             {
-                //Debug.Log($"[Sim-Debug] Possession Start. Clock: {CurrentState.GameClockSeconds:F1}, ShotClock: {CurrentState.ShotClockSeconds:F1}, Score: {CurrentState.AwayScore}-{CurrentState.HomeScore}");
                 float clockBeforePossession = CurrentState.GameClockSeconds;
 
                 if (CurrentState.LastPasser == null)
@@ -66,7 +60,6 @@ public class BackgroundGameSimulator : IGameSimulator
                     CurrentState.LastPasser = GetRandomAttacker();
                     if (CurrentState.LastPasser == null)
                     {
-                        //Debug.LogWarning($"[Sim-Debug] No attacker found. Breaking possession loop.");
                         break; 
                     }
                 }
@@ -76,7 +69,6 @@ public class BackgroundGameSimulator : IGameSimulator
                 
                 float clockAfterPossession = CurrentState.GameClockSeconds;
                 float timeElapsed = clockBeforePossession - clockAfterPossession;
-                //Debug.Log($"[Sim-Debug] Possession End. Time elapsed: {timeElapsed:F1}.");
 
                 if (timeElapsed > 0)
                 {
@@ -88,18 +80,14 @@ public class BackgroundGameSimulator : IGameSimulator
 
                     if (_timeUntilNextInjuryCheck <= 0)
                     {
-                        //Debug.Log($"[Sim-Debug] CheckForInjuries: {timeElapsed}");
                         CheckForInjuries();
                         _timeUntilNextInjuryCheck = 60f;
                     }
                     if (_timeUntilNextSubCheck <= 0)
                     {
-                        //Debug.Log($"[Sim-Debug] CheckForSubstitutions: {timeElapsed}");
                         CheckForSubstitutions();
                         _timeUntilNextSubCheck = substitutionCheckInterval;
                     }
-
-                    //Debug.Log($"[Sim-Debug] UpdateAllPlayerStamina: {timeElapsed}");
                 }
 
                 // 샷클락 바이얼레이션 (공격이 끝나지 않았는데 샷클락이 0이 된 경우)
@@ -111,11 +99,9 @@ public class BackgroundGameSimulator : IGameSimulator
                     CurrentState.LastPasser = null;
                 }
             }
-            //Debug.Log($"[Sim-Debug] ---- Quarter {CurrentState.Quarter} End. Score: {CurrentState.AwayScore}-{CurrentState.HomeScore} ----");
         }
 
         var allPlayers = _homeTeamRoster.Concat(_awayTeamRoster).ToList();
-        Debug.Log($"[Sim-Debug] Game simulation finished. Final Score: {CurrentState.AwayScore}-{CurrentState.HomeScore}. Saving results...");
 
         // [추가] 경기 종료 후 스태미나/부상 상태 DB에 저장
         foreach (var p in allPlayers)
@@ -197,31 +183,24 @@ public class BackgroundGameSimulator : IGameSimulator
     private void BuildOffenseBehaviorTree()
     {
         _rootOffenseNode = new Selector(new List<Node> {
-            // 1. 샷클락이 부족할 때의 긴급 행동
             new Sequence(new List<Node> {
                 new Condition_IsShotClockLow(),
                 new Selector(new List<Node> { 
-                    new Sequence(new List<Node> { new Condition_IsOpenFor3(), new Action_TryForced3PointShot() }),
-                    new Sequence(new List<Node> { new Condition_CanDrive(), new Action_TryForcedDrive() }),
-                    new Sequence(new List<Node> { new Condition_IsGoodForMidRange(), new Action_TryForcedMidRangeShot() }),
-                    new Action_TryForced3PointShot() // 최후의 수단
+                    new Sequence(new List<Node> { new Condition_IsOpenFor3(_random), new Action_TryForced3PointShot(_random) }),
+                    new Sequence(new List<Node> { new Condition_CanDrive(_random), new Action_TryForcedDrive(_random) }),
+                    new Sequence(new List<Node> { new Condition_IsGoodForMidRange(_random), new Action_TryForcedMidRangeShot(_random) }),
+                    new Action_TryForced3PointShot(_random)
                 })
             }),
-            // 2. 일반적인 공격 상황 (득점 우선)
             new Selector(new List<Node> {
-                // 2a. 득점 시도를 가장 먼저 고려
+                new Sequence(new List<Node> { new Condition_IsGoodPassOpportunity(_random), new Action_PassToBestTeammate(_random) }),
                 new Selector(new List<Node> {
-                    new Sequence(new List<Node> { new Condition_IsOpenFor3(), new Action_Try3PointShot() }),
-                    new Sequence(new List<Node> { new Condition_CanDrive(), new Action_DriveAndFinish() }),
-                    new Sequence(new List<Node> { new Condition_IsGoodForMidRange(), new Action_TryMidRangeShot() })
+                    new Sequence(new List<Node> { new Condition_IsOpenFor3(_random), new Action_Try3PointShot(_random) }),
+                    new Sequence(new List<Node> { new Condition_CanDrive(_random), new Action_DriveAndFinish(_random) }),
+                    new Sequence(new List<Node> { new Condition_IsGoodForMidRange(_random), new Action_TryMidRangeShot(_random) })
                 }),
-                // 2b. 좋은 득점 기회가 없으면 패스를 고려
-                new Sequence(new List<Node> { 
-                    new Condition_IsGoodPassOpportunity(), 
-                    new Action_PassToBestTeammate() 
-                }),
-                // 2c. 슛도, 패스도 마땅치 않으면 마지막으로 다시 패스 시도 (고립 상황 탈출)
-                new Action_PassToBestTeammate()
+                new Sequence(new List<Node> { new Condition_IsGoodPassOpportunity(_random), new Action_PassToBestTeammate(_random) }),
+                new Action_PassToBestTeammate(_random)
             })
         });
     }
@@ -496,14 +475,13 @@ public class BackgroundGameSimulator : IGameSimulator
         defender.Stats.PersonalFouls++;
         if (defender.Stats.PersonalFouls >= 6)
         {
-            EjectPlayer(defender, "6 Personal Fouls");
+            EjectPlayer(defender, "fouling out");
         }
 
         shooter.Stats.FieldGoalsAttempted++;
         if (freeThrows == 3) shooter.Stats.ThreePointersAttempted++;
         
-        var freeThrowAction = new Action_ShootFreeThrows(shooter, freeThrows);
-        return freeThrowAction.Evaluate(this, shooter); 
+        return new Action_ShootFreeThrows(shooter, freeThrows, _random).Evaluate(this, shooter); 
     }
 
     public void ResolveRebound(GamePlayer shooter)

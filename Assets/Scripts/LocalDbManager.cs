@@ -323,8 +323,14 @@ public class LocalDbManager : MonoBehaviour
         var teamFinance = GetTeamFinance(teamAbbr, season);
         if (teamFinance != null)
         {
-            if (won) teamFinance.Wins++;
-            else teamFinance.Losses++;
+            if (won) {
+                teamFinance.Wins++;
+                teamFinance.TeamBudget += 1000000;
+            }
+            else {
+                teamFinance.Losses++;
+                teamFinance.TeamBudget -= 1000000;
+            }
             Connection.Update(teamFinance);
         }
     }
@@ -450,14 +456,6 @@ public class LocalDbManager : MonoBehaviour
         {
             rating.team = "FA"; // Free Agent
             Connection.Update(rating);
-        }
-
-        var status = GetPlayerStatus(playerId);
-        if (status != null)
-        {
-            status.Salary = 0;
-            status.YearsLeft = 0;
-            Connection.Update(status);
         }
     }
 

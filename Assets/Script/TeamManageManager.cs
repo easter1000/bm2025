@@ -1,61 +1,63 @@
 using System.Collections.Generic;
 using System.Linq;
 using UnityEngine;
-using UnityEngine.SceneManagement;
 using UnityEngine.UI;
 using madcamp3.Assets.Script.Player;
 
-/// <summary>
-/// 트레이드 패널 전체를 관리하는 매니저.
-/// 1) 팀 로고 버튼들을 GridLayoutGroup 하위에 동적 생성한다.
-/// 2) 로고 클릭 시 TeamItemUI 에 해당 팀 정보를 표시한다.
-/// 3) TeamItemUI 의 카드 클릭(onClick) 시 TradeScene 으로 이동하며,
-///    선택된 팀의 약어(abbreviation)를 PlayerPrefs 로 전달한다.
-/// </summary>
-public class TradePanelManager : MonoBehaviour
+public class TeamManageManager : MonoBehaviour
 {
     [Header("UI References")]
-    [SerializeField] private TeamItemUI teamItemUI;            // 팀 상세 정보를 보여줄 카드
-    [SerializeField] private Transform logoGridContent;        // GridLayoutGroup 이 붙은 transform
+    [SerializeField] private TeamItemUI teamItemUI;
+    [SerializeField] private Transform logoGridContent;
+    [SerializeField] private Button releasePlayerButton;
+    [SerializeField] private ConfirmDialog confirmDialog;
+    [SerializeField] private Image injuryImage;
+    [SerializeField] private TMPro.TextMeshProUGUI injuryText;
 
-    private readonly List<TeamData> displayTeams = new();      // 나(사용자) 팀을 제외한 29개 팀
-    private TeamData currentTeam;                              // 현재 화면에 표시 중인 팀
-    private string myTeamAbbr;                                 // 사용자가 플레이 중인 팀 약어
-    private GameObject highlightedLogoObj;                     // 노란색 테두리가 적용된 로고 객체
-
-    private const string TradeTargetKey = "TradeTargetTeamAbbr";
-    private const string TradeSceneName = "TradeScene";        // 이동할 씬 이름
+    private readonly List<TeamData> displayTeams = new();
+    private TeamData currentTeam;
+    private string myTeamAbbr;
+    private GameObject highlightedLogoObj;
+    private PlayerLine selectedPlayerLine;
 
     private void Start()
     {
-        // 1) 유저(코치)가 선택한 팀 약어 파악
         myTeamAbbr = LocalDbManager.Instance.GetUser()?.SelectedTeamAbbr;
 
-        // 2) 팀 데이터 준비 (29개)
         BuildTeamDataList();
-
-        // 3) 그리드에 로고 버튼 생성
         PopulateLogoGrid();
 
-        // 4) 초기 팀 정보 표시 – 첫 번째 팀
-        if (displayTeams.Count > 0)
+        if (releasePlayerButton != null)
+        {
+            releasePlayerButton.onClick.RemoveAllListeners();
+            releasePlayerButton.onClick.AddListener(OnReleasePlayerClicked);
+        }
+
+        TeamData myTeam = displayTeams.FirstOrDefault(t => t.abbreviation == myTeamAbbr);
+        if (myTeam != null)
+        {
+            ShowTeam(myTeam);
+            GameObject myTeamLogoObj = logoGridContent.Find($"Logo_{myTeam.abbreviation}")?.gameObject;
+            if (myTeamLogoObj != null)
+            {
+                UpdateLogoHighlight(myTeamLogoObj);
+            }
+        }
+        else if (displayTeams.Count > 0)
         {
             ShowTeam(displayTeams[0]);
+             GameObject firstTeamLogoObj = logoGridContent.Find($"Logo_{displayTeams[0].abbreviation}")?.gameObject;
+            if (firstTeamLogoObj != null)
+            {
+                UpdateLogoHighlight(firstTeamLogoObj);
+            }
         }
         else
         {
-            Debug.LogWarning("[TradePanelManager] 표시할 팀 데이터가 없습니다.");
+            Debug.LogWarning("[TeamManageManager] 표시할 팀 데이터가 없습니다.");
         }
     }
 
-    #region Build Team Data
-
-    /// <summary>
-    /// LocalDbManager 의 테이블을 기반으로 TeamData 리스트를 구축한다.
-    /// NewGameManager.InitDummyTeams 와 동일(유사) 로직을 사용하지만,
-    ///   1) 내 팀은 제외한다.
-    ///   2) 결과를 team_id 기준 오름차순으로 정렬하여 '1~30번째' 고정 순서를 따른다.
-    /// </summary>
     private void BuildTeamDataList()
     {
         displayTeams.Clear();
@@ -63,24 +65,18 @@ public class TradePanelManager : MonoBehaviour
         var teamEntities = LocalDbManager.Instance.GetAllTeams();
         if (teamEntities == null || teamEntities.Count == 0)
         {
-            Debug.LogError("[TradePanelManager] Team 테이블을 불러오지 못했습니다.");
+            Debug.LogError("[TeamManageManager] Team 테이블을 불러오지 못했습니다.");
             return;
         }
 
         foreach (var teamEntity in teamEntities)
         {
-            // 내 팀은 스킵
-            if (!string.IsNullOrEmpty(myTeamAbbr) && teamEntity.team_abbv == myTeamAbbr)
-                continue;
-
             string teamName = teamEntity.team_name;
             string abbr = teamEntity.team_abbv;
 
-            // 해당 팀 선수 목록 로드
             var allPlayers = LocalDbManager.Instance.GetPlayersByTeam(abbr);
             if (allPlayers == null || allPlayers.Count < 5) continue;
 
-            // best_five 문자열(PG,SG,SF,PF,C 순) → player_id 매핑
             Dictionary<int, string> idToAssignedPos = new();
             HashSet<int> starterIds = new();
             if (!string.IsNullOrEmpty(teamEntity.best_five))
@@ -91,7 +87,7 @@ public class TradePanelManager : MonoBehaviour
                     if (int.TryParse(parts[i], out int pid))
                     {
                         starterIds.Add(pid);
-                        idToAssignedPos[pid] = PositionCodeToString(i + 1); // 1~5 → PG~C
+                        idToAssignedPos[pid] = PositionCodeToString(i + 1);
                     }
                 }
             }
@@ -111,7 +107,7 @@ public class TradePanelManager : MonoBehaviour
                     Height = pr.height,
                     Weight = pr.weight,
                     OverallScore = pr.overallAttribute,
-                    Potential = pr.potential,
+                    Potential = status?.Stamina ?? 100, // Use Stamina for Potential
                     PlayerId = pr.player_id,
                     IsInjured = status?.IsInjured ?? false,
                     AssignedPosition = idToAssignedPos.ContainsKey(pr.player_id) ? idToAssignedPos[pr.player_id] : null
@@ -126,8 +122,7 @@ public class TradePanelManager : MonoBehaviour
                     bench.Add(pl);
                 }
             }
-
-            // 주전이 5명 미만이라면 벤치에서 최고 OVR 순으로 채운다.
+            
             if (starters.Count < 5)
             {
                 var add = bench.OrderByDescending(p => p.OverallScore).Take(5 - starters.Count).ToList();
@@ -139,7 +134,6 @@ public class TradePanelManager : MonoBehaviour
                 }
             }
 
-            // 최종 playerLines: starters (5) + bench
             List<PlayerLine> playerLines = new();
             playerLines.AddRange(starters);
             playerLines.AddRange(bench);
@@ -148,8 +142,13 @@ public class TradePanelManager : MonoBehaviour
             displayTeams.Add(td);
         }
 
-        // team_id (1~30) 기준 정렬 – 첫 번째부터 30번째까지 순서 보장
-        displayTeams.Sort((a, b) => a.teamId.CompareTo(b.teamId));
+        // Sort to bring my team to the front
+        displayTeams.Sort((a, b) =>
+        {
+            if (a.abbreviation == myTeamAbbr) return -1;
+            if (b.abbreviation == myTeamAbbr) return 1;
+            return a.teamId.CompareTo(b.teamId);
+        });
     }
 
     private string PositionCodeToString(int code)
@@ -165,36 +164,23 @@ public class TradePanelManager : MonoBehaviour
         };
     }
 
-    #endregion
-
-    #region UI – Logo Grid
-
     private void PopulateLogoGrid()
     {
-        if (logoGridContent == null)
-        {
-            Debug.LogError("[TradePanelManager] logoGridContent 참조가 없습니다.");
-            return;
-        }
+        if (logoGridContent == null) return;
 
-        // 기존 자식 제거
         foreach (Transform child in logoGridContent)
         {
             Destroy(child.gameObject);
         }
 
-        // 29개 팀 로고 버튼 생성
         foreach (var t in displayTeams)
         {
             CreateLogoButton(t);
         }
-
-        CreateFreeLogoButton();
     }
 
     private void CreateLogoButton(TeamData team)
     {
-        // 새로운 GameObject 생성 후 필요 컴포넌트(Image, Button) 추가
         GameObject obj = new GameObject($"Logo_{team.abbreviation}", typeof(RectTransform), typeof(Image), typeof(Button));
         obj.transform.SetParent(logoGridContent, false);
         obj.transform.localScale = Vector3.one;
@@ -208,25 +194,16 @@ public class TradePanelManager : MonoBehaviour
             img.preserveAspect = true;
         }
 
-        // 클릭 이벤트 – 새로 추가된 Button 컴포넌트 이용
         Button btn = obj.GetComponent<Button>();
         if (btn != null)
         {
-            TeamData capturedTeam = team;
-            GameObject capturedObj = obj;
-            btn.onClick.AddListener(() => OnLogoClicked(capturedTeam, capturedObj));
+            btn.onClick.AddListener(() => OnLogoClicked(team, obj));
         }
     }
 
-    /// <summary>
-    /// 로고 클릭 시 호출: 팀 정보 표시 + 노란색 테두리 하이라이트
-    /// </summary>
     private void OnLogoClicked(TeamData team, GameObject logoObj)
     {
-        // 1) 팀 상세 표시
         ShowTeam(team);
-
-        // 2) 하이라이트 업데이트
         UpdateLogoHighlight(logoObj);
     }
 
@@ -234,14 +211,12 @@ public class TradePanelManager : MonoBehaviour
     {
         if (highlightedLogoObj == newLogoObj) return;
 
-        // 1) 이전 하이라이트의 BorderRect 비활성화
         if (highlightedLogoObj != null)
         {
             Transform prevBorder = highlightedLogoObj.transform.Find("BorderLines");
             if (prevBorder != null) prevBorder.gameObject.SetActive(false);
         }
 
-        // 2) 새 하이라이트 적용 – BorderRect 활성화 또는 생성
         if (newLogoObj != null)
         {
             Transform borderT = newLogoObj.transform.Find("BorderLines");
@@ -260,7 +235,6 @@ public class TradePanelManager : MonoBehaviour
                 const float thickness = 4f;
                 Color borderColor = Color.yellow;
 
-                // Helper to create each line
                 void CreateLine(string name, Vector2 anchorMin, Vector2 anchorMax)
                 {
                     GameObject line = new GameObject(name, typeof(RectTransform), typeof(Image));
@@ -275,17 +249,13 @@ public class TradePanelManager : MonoBehaviour
                     img.raycastTarget = false;
                 }
 
-                // Top
-                CreateLine("Top", new Vector2(0,1), new Vector2(1,1));
+                CreateLine("Top", new Vector2(0, 1), new Vector2(1, 1));
                 borderRoot.transform.Find("Top").GetComponent<RectTransform>().sizeDelta = new Vector2(0, thickness);
-                // Bottom
-                CreateLine("Bottom", new Vector2(0,0), new Vector2(1,0));
+                CreateLine("Bottom", new Vector2(0, 0), new Vector2(1, 0));
                 borderRoot.transform.Find("Bottom").GetComponent<RectTransform>().sizeDelta = new Vector2(0, thickness);
-                // Left
-                CreateLine("Left", new Vector2(0,0), new Vector2(0,1));
+                CreateLine("Left", new Vector2(0, 0), new Vector2(0, 1));
                 borderRoot.transform.Find("Left").GetComponent<RectTransform>().sizeDelta = new Vector2(thickness, 0);
-                // Right
-                CreateLine("Right", new Vector2(1,0), new Vector2(1,1));
+                CreateLine("Right", new Vector2(1, 0), new Vector2(1, 1));
                 borderRoot.transform.Find("Right").GetComponent<RectTransform>().sizeDelta = new Vector2(thickness, 0);
             }
             else
@@ -293,48 +263,110 @@ public class TradePanelManager : MonoBehaviour
                 borderT.gameObject.SetActive(true);
             }
         }
-
-        // 3) 레퍼런스 갱신
         highlightedLogoObj = newLogoObj;
     }
-
-    private void CreateFreeLogoButton()
-    {
-        GameObject obj = new GameObject("Logo_Free", typeof(RectTransform), typeof(Image));
-        obj.transform.SetParent(logoGridContent, false);
-        obj.transform.localScale = Vector3.one;
-
-        Image img = obj.GetComponent<Image>();
-        if (img != null)
-        {
-            Sprite freeLogo = Resources.Load<Sprite>("team_photos/free");
-            img.sprite = freeLogo;
-            img.preserveAspect = true;
-        }
-    }
-
-    #endregion
-
-    #region Team Display & Scene Navigation
 
     private void ShowTeam(TeamData team)
     {
         currentTeam = team;
         if (teamItemUI != null)
         {
-            teamItemUI.Init(team, OnTeamItemClicked);
+            // Clicking the team item does nothing in this manager.
+            teamItemUI.Init(team, (selectedTeam) => { /* Do Nothing */ });
+
+            teamItemUI.OnPlayerLineClicked -= OnPlayerSelected;
+            teamItemUI.OnPlayerLineClicked += OnPlayerSelected;
         }
-        // 초기 호출 시 선택된 로고 없는 경우를 대비해 skip (UpdateLogoHighlight는 OnLogoClicked에서 처리)
+        UpdateReleaseButtonVisibility();
     }
 
-    private void OnTeamItemClicked(TeamData team)
+    private void OnPlayerSelected(PlayerLine playerLine)
     {
-        // 1) 선택 팀 약어 저장
-        PlayerPrefs.SetString(TradeTargetKey, team.abbreviation);
-
-        // 2) TradeScene 로드
-        SceneManager.LoadScene(TradeSceneName);
+        selectedPlayerLine = playerLine;
+        UpdateReleaseButtonVisibility();
+        UpdateInjuryStatusUI(playerLine);
     }
 
-    #endregion
+    private void UpdateInjuryStatusUI(PlayerLine playerLine)
+    {
+        if (injuryImage == null || injuryText == null) return;
+
+        if (playerLine == null)
+        {
+            injuryImage.gameObject.SetActive(false);
+            injuryText.gameObject.SetActive(false);
+            return;
+        }
+
+        injuryImage.gameObject.SetActive(true);
+        injuryText.gameObject.SetActive(true);
+
+        PlayerStatus status = LocalDbManager.Instance.GetPlayerStatus(playerLine.PlayerId);
+        if (status != null && status.IsInjured)
+        {
+            injuryImage.color = Color.red;
+            injuryText.text = $"INJURED: {status.InjuryDaysLeft} days left";
+        }
+        else
+        {
+            injuryImage.color = Color.green;
+            injuryText.text = "HEALTHY";
+        }
+    }
+
+    private void UpdateReleaseButtonVisibility()
+    {
+        if (releasePlayerButton != null)
+        {
+            bool isMyTeam = (currentTeam != null && currentTeam.abbreviation == myTeamAbbr);
+            releasePlayerButton.gameObject.SetActive(isMyTeam);
+        }
+    }
+
+    private void OnReleasePlayerClicked()
+    {
+        if (selectedPlayerLine == null)
+        {
+            Debug.LogWarning("방출할 선수가 선택되지 않았습니다.");
+            return;
+        }
+
+        if (confirmDialog != null)
+        {
+            string message = $"정말로 '{selectedPlayerLine.PlayerName}' 선수를 방출하시겠습니까?";
+            confirmDialog.Show(message, 
+                () => { ReleasePlayer(); }, // onYes
+                () => { /* onNo, do nothing */ }
+            );
+        }
+    }
+
+    private void ReleasePlayer()
+    {
+        if (selectedPlayerLine == null) return;
+
+        Debug.Log($"Releasing player: {selectedPlayerLine.PlayerName} (ID: {selectedPlayerLine.PlayerId})");
+        string currentTeamAbbr = currentTeam.abbreviation;
+
+        LocalDbManager.Instance.ReleasePlayer(selectedPlayerLine.PlayerId);
+        
+        // 데이터 및 UI 새로고침
+        BuildTeamDataList();
+        
+        TeamData refreshedTeam = displayTeams.FirstOrDefault(t => t.abbreviation == currentTeamAbbr);
+        
+        if (refreshedTeam != null)
+        {
+            ShowTeam(refreshedTeam);
+        }
+        else if (displayTeams.Count > 0)
+        {
+            // 만약 현재 팀이 어떤 이유로든 사라졌다면, 목록의 첫 번째 팀을 보여줌
+            ShowTeam(displayTeams[0]);
+        }
+        else
+        {
+            Debug.LogError("[TeamManageManager] ReleasePlayer 후 표시할 팀이 없습니다.");
+        }
+    }
 } 

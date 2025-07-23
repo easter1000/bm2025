@@ -71,7 +71,6 @@ public class TradeSceneManager : MonoBehaviour
         if (tradeButton != null) tradeButton.onClick.AddListener(OnTradeButtonClicked);
         if (backButton != null) backButton.onClick.AddListener(OnBackButtonClicked);
         Initialize();
-        //_hasStarted = true;
     }
 
     private void OnBackButtonClicked()
@@ -81,8 +80,6 @@ public class TradeSceneManager : MonoBehaviour
 
     private void Initialize()
     {
-        // if (playerDetailUI != null) playerDetailUI.gameObject.SetActive(false);
-
         myTeamAbbr = LocalDbManager.Instance.GetUser()?.SelectedTeamAbbr;
         oppTeamAbbr = PlayerPrefs.GetString("TradeTargetTeamAbbr", string.Empty); if (string.IsNullOrEmpty(oppTeamAbbr) || oppTeamAbbr == myTeamAbbr) { Debug.LogWarning("[TradeSceneManager] 상대 팀 약어가 유효하지 않아 FA를 사용합니다"); oppTeamAbbr = "FA"; }
 
@@ -155,7 +152,13 @@ public class TradeSceneManager : MonoBehaviour
 
         if (players == null) return;
 
-        foreach (var pr in players.OrderByDescending(p => p.overallAttribute))
+        // 부상당하지 않은 선수만 필터링
+        var healthyPlayers = players.Where(p => {
+            var status = LocalDbManager.Instance.GetPlayerStatus(p.player_id);
+            return status != null && !status.IsInjured;
+        }).OrderByDescending(p => p.overallAttribute);
+
+        foreach (var pr in healthyPlayers)
         {
             GameObject go = Instantiate(playerTradeLinePrefab, content);
             go.transform.localScale = Vector3.one;
@@ -326,7 +329,7 @@ public class TradeSceneManager : MonoBehaviour
         if (result.IsAccepted && result.RequiredCash == 0)
         {
             // 즉시 수락
-            confirmDialog.Show("트레이드 제안이 수락되었습니다!", () => FinalizeTrade(mySelectedPlayers, oppSelectedPlayers, 0), () => {});
+            confirmDialog.Show("상대방이 제안을 흔쾌히 수락합니다. 거래하시겠습니까?", () => FinalizeTrade(mySelectedPlayers, oppSelectedPlayers, 0), () => {});
         }
         else if (result.IsAccepted)
         {
@@ -351,7 +354,6 @@ public class TradeSceneManager : MonoBehaviour
         }
         else
         {
-            // 거절
             confirmDialog.Show("트레이드 제안이 거절되었습니다.", () => { }, null);
         }
     }
@@ -374,7 +376,6 @@ public class TradeSceneManager : MonoBehaviour
         // 3. 연봉 총액 재계산
         db.RecalculateAndSaveAllTeamSalaries();
 
-        Debug.Log("Trade successful! Reloading UI...");
         // 4. UI 새로고침
         Initialize();
     }

@@ -27,46 +27,13 @@ public class GameFlowManager : MonoBehaviour
 
         Schedule finishedGameInfo = GameDataHolder.CurrentGameInfo;
 
-        // 1. 끝난 유저 경기 결과 저장
+        // 끝난 유저 경기 결과 저장
         Debug.Log($"[GameFlowManager] Saving user game result for {finishedGameInfo.GameId}.");
         SaveGameResult(finishedGameInfo, userGameResult);
-        
-        // 2. 오늘 있었던 나머지 AI 경기들을 시뮬레이션하고 결과 저장
-        Debug.Log("[GameFlowManager] Simulating remaining AI games for the day.");
-        string userTeamAbbr = LocalDbManager.Instance.GetUser()?.SelectedTeamAbbr;
-        List<Schedule> allGamesToday = LocalDbManager.Instance.GetGamesForDate(finishedGameInfo.GameDate);
 
-        var remainingAiGames = allGamesToday
-            .Where(g => g.GameId != finishedGameInfo.GameId && g.GameStatus == "Scheduled")
-            .ToList();
-
-        if (remainingAiGames.Count > 0)
-        {
-            BackgroundGameSimulator simulator = new BackgroundGameSimulator();
-            foreach (var game in remainingAiGames)
-            {
-                Debug.Log($" - Simulating: {game.AwayTeamAbbr} at {game.HomeTeamAbbr}");
-                var result = simulator.SimulateFullGame(game);
-                SaveGameResult(game, result);
-            }
-        }
-        else
-        {
-            Debug.Log("[GameFlowManager] No other AI games to simulate today.");
-        }
-
-
-        // 3. 날짜를 하루 진행
+        // 날짜 진행
         LocalDbManager.Instance.AdvanceUserDate();
-        
-        // 4. AI 팀들의 트레이드 시도
-        if (SeasonManager.Instance != null)
-        {
-            SeasonManager.Instance.AttemptAiToAiTrades();
-        }
 
-        // 5. 시즌 씬으로 돌아가기
-        Debug.Log("모든 작업 완료. SeasonScene으로 돌아갑니다.");
         SceneManager.LoadScene("SeasonScene");
     }
 
