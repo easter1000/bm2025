@@ -230,6 +230,41 @@ public class TradePanelManager : MonoBehaviour
         UpdateLogoHighlight(logoObj);
     }
 
+    private void OnFreeAgentLogoClicked(GameObject logoObj)
+    {
+        // 1. FA 선수 목록으로 TeamData 생성
+        var faPlayers = LocalDbManager.Instance.GetFreeAgents();
+        if (faPlayers == null) faPlayers = new List<PlayerRating>();
+
+        List<PlayerLine> playerLines = new();
+        foreach (var pr in faPlayers)
+        {
+            PlayerStatus status = LocalDbManager.Instance.GetPlayerStatus(pr.player_id);
+            playerLines.Add(new PlayerLine
+            {
+                PlayerName = pr.name,
+                Position = PositionCodeToString(pr.position),
+                BackNumber = pr.backNumber,
+                Age = pr.age,
+                Height = pr.height,
+                Weight = pr.weight,
+                OverallScore = pr.overallAttribute,
+                Potential = pr.potential,
+                PlayerId = pr.player_id,
+                IsInjured = status?.IsInjured ?? false,
+                AssignedPosition = null
+            });
+        }
+        
+        TeamData faTeamData = new(-1, "Free Agents", "FA", playerLines, "#808080");
+
+        // 2. 팀 상세 정보 표시 (이후 TeamItemUI의 버튼을 누르면 OnTeamItemClicked가 호출됨)
+        ShowTeam(faTeamData);
+        
+        // 3. 하이라이트 업데이트
+        UpdateLogoHighlight(logoObj);
+    }
+
     private void UpdateLogoHighlight(GameObject newLogoObj)
     {
         if (highlightedLogoObj == newLogoObj) return;
@@ -300,7 +335,7 @@ public class TradePanelManager : MonoBehaviour
 
     private void CreateFreeLogoButton()
     {
-        GameObject obj = new GameObject("Logo_Free", typeof(RectTransform), typeof(Image));
+        GameObject obj = new GameObject("Logo_Free", typeof(RectTransform), typeof(Image), typeof(Button));
         obj.transform.SetParent(logoGridContent, false);
         obj.transform.localScale = Vector3.one;
 
@@ -310,6 +345,12 @@ public class TradePanelManager : MonoBehaviour
             Sprite freeLogo = Resources.Load<Sprite>("team_photos/free");
             img.sprite = freeLogo;
             img.preserveAspect = true;
+        }
+
+        Button btn = obj.GetComponent<Button>();
+        if (btn != null)
+        {
+            btn.onClick.AddListener(() => OnFreeAgentLogoClicked(obj));
         }
     }
 

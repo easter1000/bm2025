@@ -27,12 +27,6 @@ public class TeamManageManager : MonoBehaviour
         BuildTeamDataList();
         PopulateLogoGrid();
 
-        if (releasePlayerButton != null)
-        {
-            releasePlayerButton.onClick.RemoveAllListeners();
-            releasePlayerButton.onClick.AddListener(OnReleasePlayerClicked);
-        }
-
         TeamData myTeam = displayTeams.FirstOrDefault(t => t.abbreviation == myTeamAbbr);
         if (myTeam != null)
         {
@@ -319,7 +313,14 @@ public class TeamManageManager : MonoBehaviour
         if (releasePlayerButton != null)
         {
             bool isMyTeam = (currentTeam != null && currentTeam.abbreviation == myTeamAbbr);
-            releasePlayerButton.gameObject.SetActive(isMyTeam);
+            bool isPlayerSelected = selectedPlayerLine != null;
+            releasePlayerButton.gameObject.SetActive(isMyTeam && isPlayerSelected);
+            
+            if (isMyTeam && isPlayerSelected)
+            {
+                releasePlayerButton.onClick.RemoveAllListeners();
+                releasePlayerButton.onClick.AddListener(OnReleasePlayerClicked);
+            }
         }
     }
 

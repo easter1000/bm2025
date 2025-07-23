@@ -516,6 +516,23 @@ public class LocalDbManager : MonoBehaviour
         Connection.Update(finance);
     }
 
+    /// <summary>
+    /// FA 선수에게 새로운 계약(연봉, 기간)을 할당합니다.
+    /// </summary>
+    public void AssignContractToPlayer(int playerId)
+    {
+        var rating = GetPlayerRating(playerId);
+        var status = GetPlayerStatus(playerId);
+
+        if (rating == null || status == null)
+        {
+            Debug.LogError($"[DB] AssignContractToPlayer: Cannot find player with ID {playerId}");
+            return;
+        }
+
+        Connection.Update(status);
+    }
+
     #endregion
 
     #region Value Calculation Helpers

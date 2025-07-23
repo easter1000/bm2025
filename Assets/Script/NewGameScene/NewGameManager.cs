@@ -51,7 +51,7 @@ public class NewGameManager : MonoBehaviour
     public Button teamIntroContinueButton;
 
     [Tooltip("선택 후 이동할 게임 씬 이름")]
-    public string gameSceneName = "Game";
+    public string gameSceneName = "SeasonScene";
 
     private Step currentStep;
     private List<TeamData> teams = new();
@@ -61,6 +61,18 @@ public class NewGameManager : MonoBehaviour
 
     // 추가: 팀 리스트 레이아웃이 이미 설정됐는지 여부
     private bool teamListLayoutConfigured = false;
+
+    private void Awake()
+    {
+        // DB에 사용자 정보가 이미 있는지 확인
+        if (LocalDbManager.Instance.GetUser() != null)
+        {
+            // 사용자 정보가 있다면, 이미 게임이 진행중인 상태이므로
+            // NewGameScene을 건너뛰고 바로 SeasonScene으로 이동
+            SceneManager.LoadScene(gameSceneName);
+            return; // 이후 Start() 로직 실행 방지
+        }
+    }
 
     private void Start()
     {

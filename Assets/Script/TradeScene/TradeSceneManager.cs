@@ -71,6 +71,7 @@ public class TradeSceneManager : MonoBehaviour
         if (tradeButton != null) tradeButton.onClick.AddListener(OnTradeButtonClicked);
         if (backButton != null) backButton.onClick.AddListener(OnBackButtonClicked);
         Initialize();
+        _hasStarted = true;
     }
 
     private void OnBackButtonClicked()
@@ -122,22 +123,57 @@ public class TradeSceneManager : MonoBehaviour
             Debug.LogError("[TradeSceneManager] 팀 약어가 유효하지 않아 FA를 사용합니다");
             teamAbbr = "FA";
         }
-        if (logoImg) { Sprite s = Resources.Load<Sprite>($"team_photos/{teamAbbr.ToLower()}"); if (s) logoImg.sprite = s; }
-        List<PlayerRating> players = LocalDbManager.Instance.GetPlayersByTeam(teamAbbr);
-        PopulatePlayerScroll(players, teamAbbr, scrollContent, dstList);
-        if (playersCountTXT) playersCountTXT.text = $"{players?.Count ?? 0} / {MaxRosterSize}";
-        TeamFinance finance = LocalDbManager.Instance.GetTeamFinance(teamAbbr, 2025);
-        if (finance != null) {
-            long currentBudget = finance.TeamBudget; long remainBudget = currentBudget - CalculateTotalAnnualSalary(players);
-            if (currentTXT) currentTXT.text = FormatMoney(currentBudget);
-            if (remainTXT) remainTXT.text = FormatMoney(remainBudget);
+
+        if (logoImg) {
+            string logoName = (teamAbbr == "FA") ? "free" : teamAbbr.ToLower();
+            Sprite s = Resources.Load<Sprite>($"team_photos/{logoName}");
+            if (s) {
+                logoImg.sprite = s;
+            } else {
+                Debug.LogWarning($"[TradeSceneManager] 로고 파일을 찾을 수 없습니다: team_photos/{logoName}");
+            }
         }
-        AdjustScrollContentHeight(scrollContent, dstList);
+
+        List<PlayerRating> players = LocalDbManager.Instance.GetPlayersByTeam(teamAbbr);
+        
+        IEnumerable<PlayerRating> displayPlayers = players;
+        if (teamAbbr != "FA")
+        {
+            displayPlayers = players.Where(p => {
+                var status = LocalDbManager.Instance.GetPlayerStatus(p.player_id);
+                return status != null && !status.IsInjured;
+            });
+        }
+        
+        PopulatePlayerScroll(displayPlayers, teamAbbr, scrollContent, dstList);
+
+        if (teamAbbr == "FA")
+        {
+            if (playersCountTXT) playersCountTXT.text = $"{players?.Count ?? 0}";
+            if (currentTXT) currentTXT.text = "$ 0";
+            if (remainTXT) remainTXT.text = "$ 0";
+        }
+        else
+        {
+            if (playersCountTXT) playersCountTXT.text = $"{players?.Count ?? 0} / {MaxRosterSize}";
+            TeamFinance finance = LocalDbManager.Instance.GetTeamFinance(teamAbbr, 2025);
+            if (finance != null) {
+                long currentBudget = finance.TeamBudget; 
+                long remainBudget = currentBudget - CalculateTotalAnnualSalary(players);
+                if (currentTXT) currentTXT.text = FormatMoney(currentBudget);
+                if (remainTXT) remainTXT.text = FormatMoney(remainBudget);
+            }
+        }
     }
 
     private void PopulatePlayerScroll(IEnumerable<PlayerRating> players, string teamAbbr, Transform content, List<GameObject> dstList)
     {
         if (content == null || playerTradeLinePrefab == null) return;
+
+        // ContentSizeFitter를 설정하여 컨텐츠 높이를 자동으로 조절하도록 합니다.
+        var csf = content.GetComponent<ContentSizeFitter>();
+        if (csf == null) csf = content.gameObject.AddComponent<ContentSizeFitter>();
+        csf.verticalFit = ContentSizeFitter.FitMode.PreferredSize;
 
         foreach (var go in dstList)
         {
@@ -152,47 +188,42 @@ public class TradeSceneManager : MonoBehaviour
 
         if (players == null) return;
 
-        // 부상당하지 않은 선수만 필터링
-        var healthyPlayers = players.Where(p => {
-            var status = LocalDbManager.Instance.GetPlayerStatus(p.player_id);
-            return status != null && !status.IsInjured;
-        }).OrderByDescending(p => p.overallAttribute);
-
-        foreach (var pr in healthyPlayers)
+        foreach (var pr in players.Where(p => p != null).OrderByDescending(p => p.overallAttribute))
         {
             GameObject go = Instantiate(playerTradeLinePrefab, content);
             go.transform.localScale = Vector3.one;
+
+            // LayoutElement를 추가/설정하여 높이를 명시적으로 지정
+            var le = go.GetComponent<LayoutElement>();
+            if (le == null) le = go.AddComponent<LayoutElement>();
+
+            if (le != null)
+            {
+                le.preferredHeight = 60f; // 개별 아이템의 높이를 60으로 고정
+                le.minHeight = 60f;
+            }
+
             PlayerTradeLine line = go.GetComponent<PlayerTradeLine>();
             if (line != null)
             {
                 PlayerStatus status = LocalDbManager.Instance.GetPlayerStatus(pr.player_id);
                 line.Setup(pr, status, teamAbbr);
                 line.OnLineClicked += ShowPlayerDetail;
-                line.OnSelectionChanged += UpdateConfirmButtonsState;
+
+                // 상대가 FA일 경우 내 선수 선택을 막는다.
+                if (teamAbbr == myTeamAbbr && oppTeamAbbr == "FA")
+                {
+                    line.SetLocked(true); 
+                }
+                else
+                {
+                    line.OnSelectionChanged += UpdateConfirmButtonsState;
+                }
             }
             dstList.Add(go);
         }
     }
 
-    private void AdjustScrollContentHeight(Transform content, List<GameObject> list)
-    {
-        if (content == null) return;
-
-        RectTransform rt = content as RectTransform;
-        if (rt == null) return;
-
-        // 레이아웃 강제 갱신 후 PreferredHeight 기반으로 설정
-        LayoutRebuilder.ForceRebuildLayoutImmediate(rt);
-
-        // ContentSizeFitter 또는 LayoutGroup이 적용된 상태에서의 권장 높이 계산
-        float preferred = LayoutUtility.GetPreferredHeight(rt);
-
-        // 비정상적 값 보호
-        if (preferred < 0) preferred = 0;
-
-        rt.SetSizeWithCurrentAnchors(RectTransform.Axis.Vertical, preferred);
-    }
-    
     public void ShowPlayerDetail(PlayerRating rating)
     {
         if (playerDetailUI == null || rating == null) return;
@@ -293,24 +324,43 @@ public class TradeSceneManager : MonoBehaviour
     {
         if (tradeButton == null) return;
 
-        bool bothConfirmed = isMyTeamConfirmed && isOppTeamConfirmed;
+        bool isOpponentFA = (oppTeamAbbr == "FA");
 
         int mySelectedCount = spawnedLinesMy.Count(go => go.GetComponent<PlayerTradeLine>()?.IsSelected ?? false);
         int oppSelectedCount = spawnedLinesOpp.Count(go => go.GetComponent<PlayerTradeLine>()?.IsSelected ?? false);
         int myCurrentTotal = spawnedLinesMy.Count;
         int oppCurrentTotal = spawnedLinesOpp.Count;
-        int myProjectedCount = myCurrentTotal - mySelectedCount + oppSelectedCount;
-        int oppProjectedCount = oppCurrentTotal - oppSelectedCount + mySelectedCount;
 
-        bool rosterSizesOk = myProjectedCount <= MaxRosterSize && oppProjectedCount <= MaxRosterSize;
+        bool rosterSizesOk = (myCurrentTotal - mySelectedCount + oppSelectedCount) <= MaxRosterSize;
+        if (!isOpponentFA)
+        {
+            rosterSizesOk &= (oppCurrentTotal - oppSelectedCount + mySelectedCount) <= MaxRosterSize;
+        }
 
-        tradeButton.interactable = bothConfirmed && rosterSizesOk;
+        if (isOpponentFA)
+        {
+            // FA 영입 시: 내 팀 선수 선택 불가, 상대 팀만 확정되면 가능
+            bool isReady = isOppTeamConfirmed && mySelectedCount == 0;
+            tradeButton.interactable = isReady && rosterSizesOk;
+        }
+        else
+        {
+            // 일반 트레이드 시: 양 팀 모두 확정 필요
+            bool isReady = isMyTeamConfirmed && isOppTeamConfirmed;
+            tradeButton.interactable = isReady && rosterSizesOk;
+        }
     }
 
     private void OnTradeButtonClicked()
     {
         var mySelectedPlayers = GetSelectedPlayers(spawnedLinesMy);
         var oppSelectedPlayers = GetSelectedPlayers(spawnedLinesOpp);
+
+        if (oppTeamAbbr == "FA")
+        {
+            HandleFreeAgentSigning(oppSelectedPlayers);
+            return;
+        }
 
         if (mySelectedPlayers.Count == 0 && oppSelectedPlayers.Count == 0)
         {
@@ -358,12 +408,61 @@ public class TradeSceneManager : MonoBehaviour
         }
     }
 
+    private void HandleFreeAgentSigning(List<PlayerRating> faPlayersToSign)
+    {
+        if (faPlayersToSign.Count == 0)
+        {
+            confirmDialog.Show("영입할 선수를 선택해주세요.", () => {}, null);
+            return;
+        }
+
+        var myFinance = LocalDbManager.Instance.GetTeamFinance(myTeamAbbr, 2025);
+        var myPlayers = LocalDbManager.Instance.GetPlayersByTeam(myTeamAbbr);
+
+        // 1. 로스터 인원 체크
+        if (myPlayers.Count + faPlayersToSign.Count > MaxRosterSize)
+        {
+            confirmDialog.Show($"로스터는 최대 {MaxRosterSize}명까지 가능합니다. (현재: {myPlayers.Count}명, 영입 시도: {faPlayersToSign.Count}명)", () => {}, null);
+            return;
+        }
+
+        // 2. 예산 체크
+        long totalSalaryOfNewPlayers = CalculateTotalAnnualSalary(faPlayersToSign);
+        long currentTeamSalary = CalculateTotalAnnualSalary(myPlayers);
+        
+        if (currentTeamSalary + totalSalaryOfNewPlayers > myFinance.TeamBudget)
+        {
+            confirmDialog.Show("예산이 부족하여 모든 선수를 영입할 수 없습니다.", () => {}, null);
+            return;
+        }
+
+        // 3. 영입 성공
+        string playerNames = string.Join(", ", faPlayersToSign.Select(p => p.name));
+        string message = $"다음 선수들을 영입하시겠습니까?\n({playerNames})";
+        
+        confirmDialog.Show(message,
+            onYes: () => {
+                FinalizeTrade(new List<PlayerRating>(), faPlayersToSign, 0);
+            },
+            onNo: () => {}
+        );
+    }
+
     private void FinalizeTrade(List<PlayerRating> myPlayers, List<PlayerRating> oppPlayers, long cashPaid)
     {
         // 1. 선수 팀 정보 업데이트
         var db = LocalDbManager.Instance;
         db.UpdatePlayerTeam(myPlayers.Select(p => p.player_id).ToList(), oppTeamAbbr);
         db.UpdatePlayerTeam(oppPlayers.Select(p => p.player_id).ToList(), myTeamAbbr);
+
+        // FA 영입일 경우, 각 선수에게 새로운 계약 할당
+        if (oppTeamAbbr == "FA")
+        {
+            foreach (var player in oppPlayers)
+            {
+                db.AssignContractToPlayer(player.player_id);
+            }
+        }
 
         // 2. 재정 정보 업데이트
         if (cashPaid > 0) // result.RequiredCash 사용

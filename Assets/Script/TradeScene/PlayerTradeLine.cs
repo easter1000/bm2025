@@ -44,7 +44,8 @@ public class PlayerTradeLine : MonoBehaviour, IPointerClickHandler
         // 팀 로고
         if (teamLogoImage != null)
         {
-            Sprite sprite = Resources.Load<Sprite>($"team_photos/{teamAbbr.ToLower()}");
+            string logoName = (teamAbbr == "FA") ? "free" : teamAbbr.ToLower();
+            Sprite sprite = Resources.Load<Sprite>($"team_photos/{logoName}");
             if (sprite != null) teamLogoImage.sprite = sprite;
         }
 

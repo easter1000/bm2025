@@ -50,6 +50,15 @@ public class TeamItemUI : MonoBehaviour
     // 선택된 PlayerLine에 표시되는 하이라이트(검은색 테두리)
     private GameObject highlightedPlayerObj;
 
+    private void ClearStarterSlots()
+    {
+        pgPlayer?.gameObject.SetActive(false);
+        sgPlayer?.gameObject.SetActive(false);
+        sfPlayer?.gameObject.SetActive(false);
+        pfPlayer?.gameObject.SetActive(false);
+        cPlayer?.gameObject.SetActive(false);
+    }
+    
     public void Init(TeamData data, Action<TeamData> onClick)
     {
         teamData = data;
@@ -102,7 +111,14 @@ public class TeamItemUI : MonoBehaviour
             startingAvgBackground.color = GetColorByScore(avgStart);
         }
 
-        var benchPlayersList = data.players.Skip(5).ToList();
+        // FA 팀일 경우 주전 슬롯을 모두 비활성화하고, 모든 선수를 벤치에 넣는다.
+        if (data.abbreviation == "FA")
+        {
+            ClearStarterSlots();
+            starters.Clear(); 
+        }
+
+        var benchPlayersList = data.players.Skip(starters.Count).ToList();
         if (substituteAvgText != null && substituteAvgBackground != null)
         {
             float avgSub = benchPlayersList.Count > 0 ? (float)benchPlayersList.Average(p => p.OverallScore) : 0f;
@@ -130,29 +146,37 @@ public class TeamItemUI : MonoBehaviour
         {
             var ctrl = starterCtrls[idx];
             if (ctrl == null) continue;
-
-            string desiredPos = idx switch
+            
+            // FA가 아닐 때만 주전 로직 실행
+            if (data.abbreviation != "FA")
             {
-                0 => "PG",
-                1 => "SG",
-                2 => "SF",
-                3 => "PF",
-                4 => "C",
-                _ => ""
-            };
+                ctrl.gameObject.SetActive(true);
+                string desiredPos = idx switch
+                {
+                    0 => "PG",
+                    1 => "SG",
+                    2 => "SF",
+                    3 => "PF",
+                    4 => "C",
+                    _ => ""
+                };
 
-            PlayerLine pl = starters.FirstOrDefault(p => p.AssignedPosition == desiredPos);
-            if (pl == null) pl = starters.FirstOrDefault(p => p.Position == desiredPos);
-            if (pl == null) pl = starters.FirstOrDefault();
-            if (pl == null) continue;
+                PlayerLine pl = starters.FirstOrDefault(p => p.AssignedPosition == desiredPos);
+                if (pl == null) pl = starters.FirstOrDefault(p => p.Position == desiredPos);
+                if (pl == null) pl = starters.FirstOrDefault();
+                if (pl == null) continue;
 
-            starters.Remove(pl);
+                starters.Remove(pl);
+                
+                Color bg = pl.IsInjured ? InjuredColor : ((idx % 2 == 0) ? RowColorOdd : RowColorEven);
+                ctrl.SetPlayerLine(pl, bg);
 
-            // 반대 순서 색: index 0 -> Odd, 1 -> Even, ...
-            Color bg = pl.IsInjured ? InjuredColor : ((idx % 2 == 0) ? RowColorOdd : RowColorEven);
-            ctrl.SetPlayerLine(pl, bg);
-
-            RegisterClick(ctrl);
+                RegisterClick(ctrl);
+            }
+            else
+            {
+                ctrl.gameObject.SetActive(false);
+            }
         }
 
         // 아직 남은 주전(드물겠지만) 나머지 슬롯 채우기
@@ -200,7 +224,7 @@ public class TeamItemUI : MonoBehaviour
                 Destroy(child.gameObject);
             }
 
-            var benchPlayers = data.players.Skip(5).ToList();
+            var benchPlayers = data.players.Skip(data.abbreviation == "FA" ? 0 : 5).ToList();
             for (int i = 0; i < benchPlayers.Count; i++)
             {
                 var plInstance = Instantiate(benchPlayerPrefab.gameObject, benchContent);
@@ -236,12 +260,18 @@ public class TeamItemUI : MonoBehaviour
         }
 
         // 초기 상세 정보: 첫 번째 주전 선수를 표시
-        if (playerDetailUI != null && starterCtrls.Length > 0 && starterCtrls[0] != null && starterCtrls[0].Data != null)
+        if (playerDetailUI != null && starterCtrls.Length > 0 && starterCtrls[0] != null && starterCtrls[0].Data != null && data.abbreviation != "FA")
         {
             PlayerLine firstStarter = starterCtrls[0].Data;
             ShowPlayerDetail(firstStarter);
             UpdatePlayerHighlight(starterCtrls[0].gameObject);
             OnPlayerLineClicked?.Invoke(firstStarter); // 최초 선택 선수 정보를 외부로 전달
+        }
+        else if (playerDetailUI != null && data.abbreviation == "FA" && data.players.Count > 0)
+        {
+            // FA 팀의 경우, 벤치 목록의 첫 번째 선수를 표시
+            ShowPlayerDetail(data.players[0]);
+            // FA의 경우 특정 라인 하이라이트는 생략하거나, 별도 구현 필요
         }
 
         void ShowPlayerDetail(PlayerLine pl)
