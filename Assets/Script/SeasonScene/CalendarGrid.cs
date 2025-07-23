@@ -34,8 +34,7 @@ public class CalendarGrid : MonoBehaviour
     [Header("Schedule View")]
     [SerializeField] private ScheduleView scheduleView;
 
-    [Header("Actions")]
-    [SerializeField] private Button advanceDayButton; // '일정 진행' 버튼
+    private SeasonSceneManager _seasonSceneManager;
 
     private void Awake()
     {
@@ -43,10 +42,10 @@ public class CalendarGrid : MonoBehaviour
         AddClickListener(prevMonthObj, -1);
         AddClickListener(nextMonthObj, +1);
 
-        if (advanceDayButton != null)
+        _seasonSceneManager = FindObjectOfType<SeasonSceneManager>();
+        if (_seasonSceneManager == null)
         {
-            advanceDayButton.onClick.AddListener(OnAdvanceDayClicked);
-            advanceDayButton.gameObject.SetActive(false); // 초기에는 숨김
+            Debug.LogError("[CalendarGrid] SeasonSceneManager를 찾을 수 없습니다!");
         }
 
         InitializeDateFromUser();
@@ -97,7 +96,7 @@ public class CalendarGrid : MonoBehaviour
         trigger.triggers.Add(entry);
     }
 
-    private void PopulateCalendar()
+    public void PopulateCalendar()
     {
         if (cellPrefab == null || gridParent == null)
         {
@@ -237,19 +236,6 @@ public class CalendarGrid : MonoBehaviour
         cell.SetSelected(true);
         _selectedCell = cell;
 
-        // '오늘' 날짜를 User 테이블에서 직접 가져와 버튼 표시 여부 결정
-        string userDateStr = LocalDbManager.Instance.GetUser()?.CurrentDate;
-        DateTime today = DateTime.MinValue;
-        if (!string.IsNullOrEmpty(userDateStr) && DateTime.TryParse(userDateStr, out DateTime parsedDate))
-        {
-            today = parsedDate.Date;
-        }
-
-        if (advanceDayButton != null)
-        {
-            advanceDayButton.gameObject.SetActive(today != DateTime.MinValue && date.Date == today);
-        }
-
         // ScheduleView 업데이트
         if (scheduleView != null)
         {
@@ -264,94 +250,5 @@ public class CalendarGrid : MonoBehaviour
             string monthName = CultureInfo.GetCultureInfo("en-US").DateTimeFormat.GetMonthName(_currentMonth).ToUpper();
             monthLabel.text = $"{monthName} {_currentYear}";
         }
-    }
-
-    private void OnAdvanceDayClicked()
-    {
-        // '오늘' 날짜를 User 테이블에서 직접 가져옴
-        string userDateStr = LocalDbManager.Instance.GetUser()?.CurrentDate;
-        DateTime today = DateTime.MinValue;
-        if (!string.IsNullOrEmpty(userDateStr) && DateTime.TryParse(userDateStr, out DateTime parsedDate))
-        {
-            today = parsedDate.Date;
-        }
-
-        if (today == DateTime.MinValue)
-        {
-            Debug.LogError("OnAdvanceDayClicked: 유효한 사용자 날짜를 가져올 수 없습니다.");
-            return;
-        }
-
-        string userTeamAbbr = LocalDbManager.Instance.GetUser()?.SelectedTeamAbbr;
-
-        if (string.IsNullOrEmpty(userTeamAbbr)) return;
-
-        // 오늘 날짜의 경기 목록을 가져옴
-        List<Schedule> gamesToday = LocalDbManager.Instance.GetGamesForDate(today.ToString("yyyy-MM-dd"));
-        
-        // 오늘 내 팀의 경기가 있는지 확인
-        Schedule myGameToday = gamesToday?.FirstOrDefault(g => 
-            (g.HomeTeamAbbr == userTeamAbbr || g.AwayTeamAbbr == userTeamAbbr) && g.GameStatus == "Scheduled");
-
-        if (myGameToday != null)
-        {
-            // 내 경기가 있으면: GameDataHolder에 정보 저장하고 씬 이동
-            GameDataHolder.CurrentGameInfo = myGameToday;
-            Debug.Log($"[CalendarGrid] User game ({myGameToday.GameId}) found. Loading game scene.");
-            UnityEngine.SceneManagement.SceneManager.LoadScene("gamelogic_test");
-        }
-        else
-        {
-            // 내 경기가 없으면: 오늘 있는 다른 모든 AI 경기를 백그라운드에서 실행
-            Debug.Log($"[CalendarGrid] No user game today. Simulating all AI games for {today:yyyy-MM-dd}.");
-            var aiGames = gamesToday?.Where(g => g.GameStatus == "Scheduled").ToList();
-
-            if (aiGames != null && aiGames.Count > 0)
-            {
-                BackgroundGameSimulator simulator = new BackgroundGameSimulator();
-                foreach (var game in aiGames)
-                {
-                    Debug.Log($" - Simulating: {game.AwayTeamAbbr} at {game.HomeTeamAbbr}");
-                    var result = simulator.SimulateFullGame(game);
-                    SaveGameResult(game, result);
-                }
-            }
-            else
-            {
-                Debug.Log("[CalendarGrid] No AI games to simulate today.");
-            }
-
-            // [수정] AI 경기 처리 후, 날짜를 넘기기 전에 트레이드를 먼저 시도
-            SeasonManager.Instance.AttemptAiToAiTrades();
-
-            // 모든 AI 경기 처리 후: 날짜를 하루 진행하고, DB 상태 업데이트 후, UI 새로고침
-            LocalDbManager.Instance.AdvanceUserDate();
-            LocalDbManager.Instance.UpdateAllPlayerStatusForNewDay(); // [추가] 모든 선수 스태미나/부상 회복
-            
-            // UI 업데이트
-            PopulateCalendar(); 
-            if (scheduleView != null)
-            {
-                // 다음 날의 스케줄을 보여주도록 업데이트
-                scheduleView.ShowScheduleForDate(today.AddDays(1));
-            }
-            
-            if (advanceDayButton != null)
-            {
-                advanceDayButton.gameObject.SetActive(false);
-            }
-        }
-    }
-
-    /// <summary>
-    /// 경기 결과를 DB에 저장하는 헬퍼 메서드
-    /// </summary>
-    private void SaveGameResult(Schedule game, GameResult result)
-    {
-        var db = LocalDbManager.Instance;
-        db.InsertPlayerStats(result.PlayerStats);
-        db.UpdateGameResult(game.GameId, result.HomeScore, result.AwayScore);
-        db.UpdateTeamWinLossRecord(game.HomeTeamAbbr, result.HomeScore > result.AwayScore, game.Season);
-        db.UpdateTeamWinLossRecord(game.AwayTeamAbbr, result.AwayScore > result.HomeScore, game.Season);
     }
 }

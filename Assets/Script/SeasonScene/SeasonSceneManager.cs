@@ -3,7 +3,9 @@ using UnityEngine.UI;
 using TMPro;
 using UnityEngine.SceneManagement;
 using System;
-using System.Linq; // Added for FirstOrDefault
+using System.Linq;
+using System.Threading.Tasks;
+using System.Collections.Generic;
 
 /// <summary>
 /// 시즌 씬에서 상단(또는 좌측) 탭 버튼을 관리하는 매니저.
@@ -25,6 +27,9 @@ public class SeasonSceneManager : MonoBehaviour
     [SerializeField] private GameObject teamManagerPanel;
     [SerializeField] private GameObject tradePanel;
     [SerializeField] private GameObject recordPanel;
+    
+    [Header("Actions")]
+    [SerializeField] private Button advanceDayButton; // '일정 진행' 버튼
 
     [Header("My Team Header UI")]
     [SerializeField] private Image myTeamLogoImage;
@@ -34,6 +39,7 @@ public class SeasonSceneManager : MonoBehaviour
 
     [Header("Dialogs")]
     [SerializeField] private ConfirmDialog confirmDialog;
+    [SerializeField] private CalendarGrid _calendarGrid;
 
     private TradeManager _tradeManager;
 
@@ -45,6 +51,7 @@ public class SeasonSceneManager : MonoBehaviour
         if (tradeButton) tradeButton.onClick.AddListener(OnTradeClicked);
         if (recordButton) recordButton.onClick.AddListener(OnRecordClicked);
         if (quitButton) quitButton.onClick.AddListener(OnQuitClicked);
+        if (advanceDayButton) advanceDayButton.onClick.AddListener(OnAdvanceDayClicked);
 
         _tradeManager = FindObjectOfType<TradeManager>();
         if (_tradeManager == null)
@@ -56,12 +63,10 @@ public class SeasonSceneManager : MonoBehaviour
     private void OnEnable()
     {
         UpdateHeaderUI();
-        SeasonManager.OnTradeOfferedToUser += HandleTradeOffer;
     }
 
     private void OnDisable()
     {
-        SeasonManager.OnTradeOfferedToUser -= HandleTradeOffer;
     }
 
     private void Start()
@@ -71,50 +76,117 @@ public class SeasonSceneManager : MonoBehaviour
 
         // 상단(좌측) 헤더 UI 업데이트
         UpdateHeaderUI();
+
+        // '일정 진행' 버튼을 항상 활성화
+        if(advanceDayButton != null)
+        {
+            advanceDayButton.gameObject.SetActive(true);
+        }
     }
 
     /// <summary>
-    /// AI 팀으로부터 온 트레이드 제안을 처리하고 다이얼로그를 띄운다.
+    /// '일정 진행' 버튼 클릭 시 실행되는 로직.
     /// </summary>
-    private void HandleTradeOffer(TradeOffer offer)
+    public async void OnAdvanceDayClicked()
     {
-        if (confirmDialog == null)
+        // 중복 클릭 방지를 위해 버튼 비활성화
+        if (advanceDayButton) advanceDayButton.interactable = false;
+
+        string userDateStr = LocalDbManager.Instance.GetUser()?.CurrentDate;
+        if (!DateTime.TryParse(userDateStr, out DateTime today))
         {
-            Debug.LogError("[SeasonSceneManager] ConfirmDialog가 연결되지 않았습니다.");
+            Debug.LogError("OnAdvanceDayClicked: 유효한 사용자 날짜를 가져올 수 없습니다.");
+            if (advanceDayButton) advanceDayButton.interactable = true;
             return;
         }
 
-        // 트레이드 제안 내용 메시지 생성
-        var offeredPlayer = offer.PlayersOfferedByProposingTeam.FirstOrDefault();
-        var requestedPlayer = offer.PlayersRequestedFromTargetTeam.FirstOrDefault();
+        string userTeamAbbr = LocalDbManager.Instance.GetUser()?.SelectedTeamAbbr;
+        if (string.IsNullOrEmpty(userTeamAbbr))
+        {
+            if (advanceDayButton) advanceDayButton.interactable = true;
+            return;
+        }
 
-        if (offeredPlayer == null || requestedPlayer == null) return;
+        var gamesToday = LocalDbManager.Instance.GetGamesForDate(today.ToString("yyyy-MM-dd"));
+        var myGameToday = gamesToday?.FirstOrDefault(g => 
+            (g.HomeTeamAbbr == userTeamAbbr || g.AwayTeamAbbr == userTeamAbbr) && g.GameStatus == "Scheduled");
 
-        string message = $"{offer.ProposingTeam.team_name}에서 트레이드를 제안했습니다:\n\n" +
-                         $"<color=green>주는 선수: {offeredPlayer.name} (OVR: {offeredPlayer.overallAttribute})</color>\n" +
-                         $"<color=red>받는 선수: {requestedPlayer.name} (OVR: {requestedPlayer.overallAttribute})</color>\n\n" +
-                         "수락하시겠습니까?";
+        if (myGameToday != null)
+        {
+            GameDataHolder.CurrentGameInfo = myGameToday;
+            SceneManager.LoadScene("gamelogic_test");
+        }
+        else
+        {
+            Debug.Log($"[SeasonSceneManager] AI turn started for {today:yyyy-MM-dd}.");
 
-        // 다이얼로그 띄우기
-        confirmDialog.Show(
-            message,
-            onYes: () => {
-                // '예'를 눌렀을 때: 트레이드 실행
-                _tradeManager.ExecuteTrade(
-                    offer.ProposingTeam.team_abbv, offer.PlayersOfferedByProposingTeam,
-                    offer.TargetTeam.team_abbv, offer.PlayersRequestedFromTargetTeam
-                );
+            List<TradeOffer> userTradeOffers = null;
 
-                // 트레이드 성공 후 후속 처리
-                Debug.Log("트레이드가 성공적으로 성사되었습니다!");
-                UpdateHeaderUI(); // 예산 등 정보 업데이트
-                // TODO: 팀 관리 패널 등 다른 UI도 새로고침 필요
-            },
-            onNo: () => {
-                // '아니오'를 눌렀을 때: 아무것도 안 함
-                Debug.Log("트레이드를 거절했습니다.");
+            // 백그라운드 스레드에서 무거운 작업들 실행
+            await Task.Run(() =>
+            {
+                // 1. AI 팀 간 트레이드 시도 및 유저 제안 수집
+                Debug.Log("[Background] Attempting AI-to-AI trades...");
+                userTradeOffers = SeasonManager.Instance.AttemptAiToAiTrades();
+
+                // 2. AI 경기 시뮬레이션
+                var aiGames = gamesToday?.Where(g => g.GameStatus == "Scheduled").ToList();
+                if (aiGames != null && aiGames.Count > 0)
+                {
+                    Debug.Log("[Background] Simulating AI games...");
+                    BackgroundGameSimulator simulator = new BackgroundGameSimulator();
+                    foreach (var game in aiGames)
+                    {
+                        var result = simulator.SimulateFullGame(game);
+                        SaveGameResult(game, result);
+                    }
+                }
+                
+                // 3. 날짜 하루 진행
+                Debug.Log("[Background] Advancing date...");
+                LocalDbManager.Instance.AdvanceUserDate();
+
+                // 4. 모든 선수 상태 업데이트
+                Debug.Log("[Background] Updating player status for new day...");
+                LocalDbManager.Instance.UpdateAllPlayerStatusForNewDay();
+            });
+
+            // 메인 스레드로 돌아와서 UI 업데이트
+            Debug.Log("[MainThread] AI turn finished. Updating UI.");
+            UpdateHeaderUI(); // 날짜, 예산 등 헤더 정보 갱신
+            if (_calendarGrid != null)
+            {
+                _calendarGrid.PopulateCalendar();
             }
-        );
+
+            // '일정 진행' 버튼은 항상 활성화된 상태로 유지
+            if (advanceDayButton)
+            {
+                advanceDayButton.interactable = true;
+                advanceDayButton.gameObject.SetActive(true);
+            }
+
+            // [메인 스레드] 수집된 트레이드 제안 처리
+            if(userTradeOffers != null && userTradeOffers.Count > 0)
+            {
+                foreach(var offer in userTradeOffers)
+                {
+                    HandleTradeOffer(offer);
+                }
+            }
+        }
+    }
+
+    /// <summary>
+    /// 경기 결과를 DB에 저장하는 헬퍼 메서드
+    /// </summary>
+    private void SaveGameResult(Schedule game, GameResult result)
+    {
+        var db = LocalDbManager.Instance;
+        db.InsertPlayerStats(result.PlayerStats);
+        db.UpdateGameResult(game.GameId, result.HomeScore, result.AwayScore);
+        db.UpdateTeamWinLossRecord(game.HomeTeamAbbr, result.HomeScore > result.AwayScore, game.Season);
+        db.UpdateTeamWinLossRecord(game.AwayTeamAbbr, result.AwayScore > result.HomeScore, game.Season);
     }
 
 
@@ -122,7 +194,7 @@ public class SeasonSceneManager : MonoBehaviour
     /// 사용자 팀 로고, 팀 이름, 현재 날짜, 예산 등을 화면에 업데이트한다.
     /// 씬 진입 시와 날짜/예산 변동 시 호출.
     /// </summary>
-    private void UpdateHeaderUI()
+    public void UpdateHeaderUI()
     {
         var user = LocalDbManager.Instance.GetUser();
         if (user == null)
@@ -179,6 +251,47 @@ public class SeasonSceneManager : MonoBehaviour
         }
     }
 
+    private void HandleTradeOffer(TradeOffer offer)
+    {
+        if (confirmDialog == null)
+        {
+            Debug.LogError("[SeasonSceneManager] ConfirmDialog가 연결되지 않았습니다.");
+            return;
+        }
+
+        // 트레이드 제안 내용 메시지 생성
+        var offeredPlayer = offer.PlayersOfferedByProposingTeam.FirstOrDefault();
+        var requestedPlayer = offer.PlayersRequestedFromTargetTeam.FirstOrDefault();
+
+        if (offeredPlayer == null || requestedPlayer == null) return;
+
+        string message = $"{offer.ProposingTeam.team_name}에서 트레이드를 제안했습니다:\n\n" +
+                         $"<color=green>주는 선수: {offeredPlayer.name} (OVR: {offeredPlayer.overallAttribute})</color>\n" +
+                         $"<color=red>받는 선수: {requestedPlayer.name} (OVR: {requestedPlayer.overallAttribute})</color>\n\n" +
+                         "수락하시겠습니까?";
+
+        // 다이얼로그 띄우기
+        confirmDialog.Show(
+            message,
+            onYes: () => {
+                // '예'를 눌렀을 때: 트레이드 실행
+                _tradeManager.ExecuteTrade(
+                    offer.ProposingTeam.team_abbv, offer.PlayersOfferedByProposingTeam,
+                    offer.TargetTeam.team_abbv, offer.PlayersRequestedFromTargetTeam
+                );
+
+                // 트레이드 성공 후 후속 처리
+                Debug.Log("트레이드가 성공적으로 성사되었습니다!");
+                UpdateHeaderUI(); // 예산 등 정보 업데이트
+                // TODO: 팀 관리 패널 등 다른 UI도 새로고침 필요
+            },
+            onNo: () => {
+                // '아니오'를 눌렀을 때: 아무것도 안 함
+                Debug.Log("트레이드를 거절했습니다.");
+            }
+        );
+    }
+    
     #region Button Callbacks
 
     private void OnScheduleClicked() => ShowOnlyPanel(calendarPanel);

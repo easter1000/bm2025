@@ -318,7 +318,8 @@ public class TradeSceneManager : MonoBehaviour
         // 4. 트레이드 평가
         var result = tradeManager.EvaluateTrade(
             myTeamAbbr, mySelectedPlayers,
-            oppTeamAbbr, oppSelectedPlayers
+            oppTeamAbbr, oppSelectedPlayers,
+            new System.Random() // 트레이드 평가를 위한 랜덤 인스턴스 전달
         );
 
         // 5. 결과 처리
