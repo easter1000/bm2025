@@ -151,7 +151,7 @@ public class SeasonManager : MonoBehaviour
         {
             for (int j = i + 1; j < aiTeams.Count; j++)
             {
-                if (rand.Next(0, 100) < 5) // 5% 확률로 트레이드 시도
+                if (rand.Next(0, 100) < 5)
                 {
                     ProposeFairTradeBetweenTeams(aiTeams[i], aiTeams[j], teamFinances, rand);
                 }
@@ -166,13 +166,13 @@ public class SeasonManager : MonoBehaviour
             var shuffledAiTeams = aiTeams.OrderBy(t => rand.Next()).ToList();
             foreach (var aiTeam in shuffledAiTeams)
             {
-                if (rand.Next(0, 100) < 100) // 3% 확률
+                if (rand.Next(0, 100) < 100)
                 {
                     var offer = GenerateAndProposeSmartTrade(aiTeam, teamFinances[aiTeam.team_abbv], userTeam, teamFinances[userTeam.team_abbv], rand, true);
                     if (offer != null)
                     {
                         userTradeOffers.Add(offer);
-                        break; // 하루에 최대 하나의 제안만 하도록 루프를 탈출
+                        break;
                     }
                 }
             }

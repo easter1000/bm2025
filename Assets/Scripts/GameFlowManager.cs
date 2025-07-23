@@ -31,6 +31,9 @@ public class GameFlowManager : MonoBehaviour
         Debug.Log($"[GameFlowManager] Saving user game result for {finishedGameInfo.GameId}.");
         SaveGameResult(finishedGameInfo, userGameResult);
 
+        // 날짜 진행
+        LocalDbManager.Instance.AdvanceUserDate();
+
         SceneManager.LoadScene("SeasonScene");
     }
 
