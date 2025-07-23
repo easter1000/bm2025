@@ -20,8 +20,8 @@ public class PlayLineUI : MonoBehaviour
 
     public void Setup(int homeRank,int awayRank,Team homeTeam,Team awayTeam,int homeScore,int awayScore)
     {
-        if (homeRankText) homeRankText.text = homeRank.ToString();
-        if (awayRankText) awayRankText.text = awayRank.ToString();
+        if (homeRankText) homeRankText.text = GetRankString(homeRank);
+        if (awayRankText) awayRankText.text = GetRankString(awayRank);
 
         if (homeAbbrText) homeAbbrText.text = homeTeam.team_abbv;
         if (awayAbbrText) awayAbbrText.text = awayTeam.team_abbv;
@@ -49,5 +49,30 @@ public class PlayLineUI : MonoBehaviour
             awayWinLoseText.color = homeWin ? Color.red : Color.green;
         }
         if (scoreText) scoreText.text = $"{homeScore}:{awayScore}";
+    }
+
+    private string GetRankString(int rank)
+    {
+        if (rank <= 0) return rank.ToString();
+
+        switch (rank % 100)
+        {
+            case 11:
+            case 12:
+            case 13:
+                return rank + "th";
+        }
+
+        switch (rank % 10)
+        {
+            case 1:
+                return rank + "st";
+            case 2:
+                return rank + "nd";
+            case 3:
+                return rank + "rd";
+            default:
+                return rank + "th";
+        }
     }
 } 
