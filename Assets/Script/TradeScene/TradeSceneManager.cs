@@ -326,7 +326,7 @@ public class TradeSceneManager : MonoBehaviour
         if (result.IsAccepted && result.RequiredCash == 0)
         {
             // 즉시 수락
-            confirmDialog.Show("트레이드 제안이 수락되었습니다!", () => FinalizeTrade(mySelectedPlayers, oppSelectedPlayers, 0), () => {});
+            confirmDialog.Show("상대방이 제안을 흔쾌히 수락합니다. 거래하시겠습니까?", () => FinalizeTrade(mySelectedPlayers, oppSelectedPlayers, 0), () => {});
         }
         else if (result.IsAccepted)
         {
@@ -351,7 +351,6 @@ public class TradeSceneManager : MonoBehaviour
         }
         else
         {
-            // 거절
             confirmDialog.Show("트레이드 제안이 거절되었습니다.", () => { }, null);
         }
     }
