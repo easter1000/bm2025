@@ -166,14 +166,17 @@ public class SeasonManager : MonoBehaviour
         Team userTeam = allTeams.FirstOrDefault(t => t.team_abbv == _userTeamAbbr);
         if (userTeam != null)
         {
-            foreach (var aiTeam in aiTeams)
+            // 어떤 팀이 먼저 제안할지 순서를 섞음
+            var shuffledAiTeams = aiTeams.OrderBy(t => rand.Next()).ToList();
+            foreach (var aiTeam in shuffledAiTeams)
             {
-                if (rand.Next(0, 1000) < 15) // 1.5% 확률
+                if (rand.Next(0, 100) < 3) // 3% 확률
                 {
                     var offer = GenerateAndProposeSmartTrade(aiTeam, teamFinances[aiTeam.team_abbv], userTeam, teamFinances[userTeam.team_abbv], rand, true);
                     if (offer != null)
                     {
                         userTradeOffers.Add(offer);
+                        break; // 하루에 최대 하나의 제안만 하도록 루프를 탈출
                     }
                 }
             }
