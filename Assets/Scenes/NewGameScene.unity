@@ -750,7 +750,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   targetText: {fileID: 295052493}
-  charInterval: 0.5
+  charInterval: 0.05
 --- !u!1 &930328342
 GameObject:
   m_ObjectHideFlags: 0
@@ -1741,7 +1741,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   targetText: {fileID: 672510461}
-  charInterval: 0.5
+  charInterval: 0.05
 --- !u!1 &1919128252
 GameObject:
   m_ObjectHideFlags: 0

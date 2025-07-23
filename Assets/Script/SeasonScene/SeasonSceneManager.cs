@@ -26,7 +26,10 @@ public class SeasonSceneManager : MonoBehaviour
     [SerializeField] private GameObject calendarPanel;
     [SerializeField] private GameObject teamManagerPanel;
     [SerializeField] private GameObject tradePanel;
-    [SerializeField] private GameObject recordPanel;
+    [SerializeField] private TMP_Dropdown recordDropdown;
+    [SerializeField] private GameObject recordRankPanel;
+    [SerializeField] private GameObject recordPlayPanel;
+    [SerializeField] private GameObject recordTradePanel;
     
     [Header("Actions")]
     [SerializeField] private Button advanceDayButton; // '일정 진행' 버튼
@@ -49,9 +52,11 @@ public class SeasonSceneManager : MonoBehaviour
         if (scheduleButton) scheduleButton.onClick.AddListener(OnScheduleClicked);
         if (teamManagerButton) teamManagerButton.onClick.AddListener(OnTeamManagerClicked);
         if (tradeButton) tradeButton.onClick.AddListener(OnTradeClicked);
-        if (recordButton) recordButton.onClick.AddListener(OnRecordClicked);
+        if (recordButton) recordButton.onClick.AddListener(OnRecordButtonClicked);
         if (quitButton) quitButton.onClick.AddListener(OnQuitClicked);
         if (advanceDayButton) advanceDayButton.onClick.AddListener(OnAdvanceDayClicked);
+        if (recordDropdown) recordDropdown.onValueChanged.AddListener(OnRecordDropdownChanged);
+
 
         _tradeManager = FindObjectOfType<TradeManager>();
         if (_tradeManager == null)
@@ -73,6 +78,9 @@ public class SeasonSceneManager : MonoBehaviour
     {
         // 시작 시 기본적으로 스케줄(캘린더) 패널 보여주기
         ShowOnlyPanel(calendarPanel);
+        
+        // 드롭다운 초기화
+        SetupRecordDropdown();
 
         // 상단(좌측) 헤더 UI 업데이트
         UpdateHeaderUI();
@@ -303,8 +311,9 @@ public class SeasonSceneManager : MonoBehaviour
             },
             onNo: () => {
                 // '아니오'를 눌렀을 때: 아무것도 안 함
-                Debug.Log("트레이드를 거절했습니다.");
-                onDialogClosed?.Invoke();
+                confirmDialog.Show("트레이드를 거절했습니다.", () => {
+                    onDialogClosed?.Invoke();
+                });
             }
         );
     }
@@ -314,7 +323,49 @@ public class SeasonSceneManager : MonoBehaviour
     private void OnScheduleClicked() => ShowOnlyPanel(calendarPanel);
     private void OnTeamManagerClicked() => ShowOnlyPanel(teamManagerPanel);
     private void OnTradeClicked() => ShowOnlyPanel(tradePanel);
-    private void OnRecordClicked() => ShowOnlyPanel(recordPanel);
+    private void OnRecordButtonClicked()
+    {
+        if (recordDropdown == null) return;
+
+        bool willShow = !recordDropdown.gameObject.activeSelf;
+        recordDropdown.gameObject.SetActive(willShow);
+
+        if (willShow)
+        {
+            StartCoroutine(OpenDropdownNextFrame());
+        }
+    }
+
+    private System.Collections.IEnumerator OpenDropdownNextFrame()
+    {
+        yield return null; // 다음 프레임까지 대기
+        recordDropdown.Show();
+        // 플레이스홀더 유지
+        if (recordDropdown.captionText)
+        {
+            recordDropdown.captionText.text = "기록 선택...";
+        }
+    }
+
+    private void OnRecordDropdownChanged(int index)
+    {
+        if (index==0){
+            ShowOnlyPanel(null); // no panel
+            return;
+        }
+        switch (index)
+        {
+            case 1: // 리그 순위
+                ShowOnlyPanel(recordRankPanel);
+                break;
+            case 2: // 경기 기록
+                ShowOnlyPanel(recordPlayPanel);
+                break;
+            case 3: // 트레이드 기록
+                ShowOnlyPanel(recordTradePanel);
+                break;
+        }
+    }
 
     private void OnQuitClicked()
     {
@@ -343,6 +394,22 @@ public class SeasonSceneManager : MonoBehaviour
 #else
         Application.Quit();
 #endif
+    }
+
+    private void SetupRecordDropdown()
+    {
+        if (recordDropdown == null) return;
+
+        recordDropdown.ClearOptions();
+        recordDropdown.AddOptions(new List<string> { "기록 선택...", "리그 순위", "경기 기록", "트레이드 기록" });
+         
+        // placeholder index 0
+        recordDropdown.SetValueWithoutNotify(0); 
+        if (recordDropdown.captionText)
+        {
+            recordDropdown.captionText.text = "기록 선택...";
+        }
+        recordDropdown.gameObject.SetActive(false);
     }
 
     #endregion
@@ -379,11 +446,31 @@ public class SeasonSceneManager : MonoBehaviour
     private void ShowOnlyPanel(GameObject activePanel)
     {
         // 배열로 묶어서 처리
-        GameObject[] panels = { calendarPanel, teamManagerPanel, tradePanel, recordPanel };
+        GameObject[] panels = { calendarPanel, teamManagerPanel, tradePanel, recordRankPanel, recordPlayPanel, recordTradePanel };
         foreach (var p in panels)
         {
             if (p == null) continue;
             p.SetActive(p == activePanel);
+        }
+
+        // 기록 탭이 아닌 다른 탭을 눌렀을 경우 드롭다운을 숨기고 값을 초기화합니다.
+        bool isRecordPanelActive = activePanel == recordRankPanel || activePanel == recordPlayPanel || activePanel == recordTradePanel;
+        if (recordDropdown != null)
+        {
+            if (!isRecordPanelActive)
+            {
+                recordDropdown.gameObject.SetActive(false);
+                recordDropdown.SetValueWithoutNotify(0);
+                if (recordDropdown.captionText)
+                {
+                    recordDropdown.captionText.text = "기록 선택...";
+                }
+            }
+            else
+            {
+                // 기록 패널을 열 때마다 드롭다운 캡션을 유지하되 필요 시 표시
+                recordDropdown.gameObject.SetActive(true);
+            }
         }
     }
 } 

@@ -118,15 +118,14 @@ public class TeamManageManager : MonoBehaviour
                 }
             }
             
-            if (starters.Count < 5)
+            // 주전 선수가 5명 미만일 경우, 빈 포지션을 채웁니다.
+            if (starters.Count < 5 && abbr == myTeamAbbr) // 내 팀에만 자동 배치 적용
             {
-                var add = bench.OrderByDescending(p => p.OverallScore).Take(5 - starters.Count).ToList();
-                foreach (var pl in add)
-                {
-                    pl.AssignedPosition = pl.Position;
-                    starters.Add(pl);
-                    bench.Remove(pl);
-                }
+                FillEmptyStarterPositions(starters, bench);
+                
+                // 변경된 주전 라인업을 DB에 저장
+                List<int> starterIdsToUpdate = starters.Select(p => p.PlayerId).ToList();
+                LocalDbManager.Instance.UpdateBestFive(abbr, starterIdsToUpdate);
             }
 
             List<PlayerLine> playerLines = new();
@@ -144,6 +143,62 @@ public class TeamManageManager : MonoBehaviour
             if (b.abbreviation == myTeamAbbr) return 1;
             return a.teamId.CompareTo(b.teamId);
         });
+    }
+
+    private void FillEmptyStarterPositions(List<PlayerLine> starters, List<PlayerLine> bench)
+    {
+        if (bench.Count == 0) return;
+
+        string[] requiredPositions = { "PG", "SG", "SF", "PF", "C" };
+        HashSet<string> currentStarterPositions = new HashSet<string>(starters.Select(p => p.AssignedPosition));
+
+        foreach (var pos in requiredPositions)
+        {
+            if (starters.Count >= 5) break;
+            if (currentStarterPositions.Contains(pos)) continue;
+
+            // 1. 해당 포지션에 가장 적합한 벤치 선수 찾기
+            PlayerLine bestCandidate = bench
+                .Where(p => !p.IsInjured) // 부상당하지 않은 선수 중에서
+                .OrderByDescending(p => p.Position == pos) // 1순위: 포지션 일치
+                .ThenByDescending(p => p.OverallScore)   // 2순위: OVR
+                .FirstOrDefault();
+
+            if (bestCandidate != null)
+            {
+                bestCandidate.AssignedPosition = pos;
+                starters.Add(bestCandidate);
+                bench.Remove(bestCandidate);
+                currentStarterPositions.Add(pos);
+            }
+        }
+
+        // 그래도 5명이 안 채워졌다면(예: 벤치 멤버 부족), 남은 선수 중 OVR 높은 순으로 채움
+        while (starters.Count < 5 && bench.Count > 0)
+        {
+            PlayerLine bestRemaining = bench.Where(p => !p.IsInjured).OrderByDescending(p => p.OverallScore).FirstOrDefault();
+            if (bestRemaining != null)
+            {
+                // 빈 포지션 중 하나를 할당
+                string emptyPos = requiredPositions.FirstOrDefault(p => !currentStarterPositions.Contains(p));
+                if (!string.IsNullOrEmpty(emptyPos))
+                {
+                    bestRemaining.AssignedPosition = emptyPos;
+                    starters.Add(bestRemaining);
+                    bench.Remove(bestRemaining);
+                    currentStarterPositions.Add(emptyPos);
+                }
+                else
+                {
+                    // 모든 포지션이 찼는데 주전이 5명이 안되는 경우는 논리적으로 거의 없지만, 방어 코드
+                    break; 
+                }
+            }
+            else
+            {
+                break; // 부상 아닌 선수가 더이상 없음
+            }
+        }
     }
 
     private string PositionCodeToString(int code)

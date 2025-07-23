@@ -143,4 +143,19 @@ public class TradeManager : MonoBehaviour
         foreach(var p in playersFromA) Debug.Log($"  - {p.name} -> {teamB_Abbr}");
         foreach(var p in playersFromB) Debug.Log($"  - {p.name} -> {teamA_Abbr}");
     }
+
+    public long CalculateMarketSalary(float currentValue)
+    {
+        // 기준이 되는 가치와 연봉 범위
+        const float VALUE_MIN = 5000f;
+        const float VALUE_MAX = 100000f;
+        const long SALARY_MIN = 2000000;
+        const long SALARY_MAX = 60000000;
+
+        // VALUE_MIN일 때 SALARY_MIN, VALUE_MAX일 때 SALARY_MAX가 나오도록 2차함수로 변환합니다.
+        float x = currentValue;
+        float a = (float)(SALARY_MAX - SALARY_MIN) / (VALUE_MAX * VALUE_MAX - VALUE_MIN * VALUE_MIN);
+        long salary = (long)(a * x * x + SALARY_MIN - a * VALUE_MIN * VALUE_MIN);
+        return salary;
+    }
 }

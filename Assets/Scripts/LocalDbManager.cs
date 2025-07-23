@@ -335,6 +335,14 @@ public class LocalDbManager : MonoBehaviour
                 .OrderBy(g => g.GameDate)
                 .ToList();
     }
+    
+    // [NEW METHOD]
+    public List<Schedule> GetScheduleForSeason(int season)
+    {
+        // 특정 시즌의 전체 경기 일정을 가져옵니다.
+        return Connection.Table<Schedule>().Where(g => g.Season == season).ToList();
+    }
+
     // --- Player ---
     public PlayerRating GetPlayerRating(int playerId) => Connection.Find<PlayerRating>(playerId);
     public List<PlayerRating> GetAllPlayerRatings() => Connection.Table<PlayerRating>().ToList();

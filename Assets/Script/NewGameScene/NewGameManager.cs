@@ -248,7 +248,7 @@ public class NewGameManager : MonoBehaviour
         selectedTeam = data;
         if (confirmDialog != null)
         {
-            confirmDialog.Show($"{data.teamName} 팀을 선택하시겠습니까?", () => OnTeamConfirmed(), null);
+            confirmDialog.Show($"{data.teamName} 팀을 선택하시겠습니까?", () => OnTeamConfirmed(), () => { });
         }
     }
 
