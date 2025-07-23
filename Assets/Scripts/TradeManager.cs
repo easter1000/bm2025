@@ -71,13 +71,11 @@ public class TradeManager : MonoBehaviour
         long newTeamSalary = CalculateTotalSalary(targetTeamRoster) - requestedSalary + offeredSalary;
         if (newTeamSalary > targetTeamFinance.TeamBudget + requiredCash)
         {
-            Debug.Log($"[Trade Rejected] Financials: {targetTeamAbbr} would exceed salary cap.");
             return result; // 재정적 타당성 실패
         }
 
         if (valueDifference >= 0)
         {
-            Debug.Log($"[Trade Accepted] Fair Trade. {targetTeamAbbr} accepted the trade.");
             result.IsAccepted = true;
             result.RequiredCash = 0;
             return result;
@@ -87,7 +85,6 @@ public class TradeManager : MonoBehaviour
         const float rejectionThreshold = 0.5f;
         if (finalOfferedValue < adjustedRequestedValue * rejectionThreshold)
         {
-            Debug.Log($"[Trade Rejected] Unfair deal. Offered value is less than {rejectionThreshold * 100}% of requested value.");
             return result;
         }
         
