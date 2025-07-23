@@ -45,7 +45,7 @@ public class GameSimulator : MonoBehaviour, IGameSimulator
     private float _timeUntilNextPossession = 0f;
     private float _timeUntilNextSubCheck = 0f;
     private float _timeUntilNextInjuryCheck = 30f; // [추가] 다음 부상 체크까지 남은 게임 시간
-
+    public int GetUserTeamId() => _userTeamId; // [추가] 유저 팀 ID를 반환하는 public 메서드
     void Awake()
     {
         Instance = this;
@@ -147,7 +147,10 @@ public class GameSimulator : MonoBehaviour, IGameSimulator
                 }
 
                 var finalPlayerStats = allPlayers
-                    .Select(p => p.ExportToPlayerStat(p.Rating.player_id, CurrentState.Season, CurrentState.GameId))
+                    .Select(p => {
+                        string teamAbbr = p.TeamId == 0 ? CurrentState.HomeTeamAbbr : CurrentState.AwayTeamAbbr;
+                        return p.ExportToPlayerStat(p.Rating.player_id, CurrentState.Season, CurrentState.GameId, CurrentState.GameDate, teamAbbr);
+                    })
                     .ToList();
                 
                 var result = new GameResult
@@ -181,8 +184,11 @@ public class GameSimulator : MonoBehaviour, IGameSimulator
         var awayTeamInfo = LocalDbManager.Instance.GetTeam(gameInfo.AwayTeamAbbr);
         CurrentState.HomeTeamName = homeTeamInfo.team_name;
         CurrentState.AwayTeamName = awayTeamInfo.team_name;
+        CurrentState.HomeTeamAbbr = homeTeamInfo.team_abbv; // [추가]
+        CurrentState.AwayTeamAbbr = awayTeamInfo.team_abbv; // [추가]
         CurrentState.Season = gameInfo.Season;
         CurrentState.GameId = gameInfo.GameId;
+        CurrentState.GameDate = gameInfo.GameDate; // [추가]
         
         // [추가] 유저 팀 ID 확인
         string userTeamAbbr = LocalDbManager.Instance.GetUser()?.SelectedTeamAbbr;
@@ -442,6 +448,45 @@ public class GameSimulator : MonoBehaviour, IGameSimulator
         AddLog($"--- {teamName} SUB: {playerIn.Rating.name} IN (Stamina: {(int)playerIn.CurrentStamina}), {playerOut.Rating.name} OUT (Stamina: {(int)playerOut.CurrentStamina}) ---");
         AddUILog($"SUB: {playerIn.Rating.name} IN (Stamina:{(int)playerIn.CurrentStamina}), {playerOut.Rating.name} OUT (Stamina:{(int)playerOut.CurrentStamina})", playerIn);
     }
+
+    /// <summary>
+    /// [추가] UI로부터 수동 교체 요청을 처리하는 메서드
+    /// </summary>
+    public bool RequestManualSubstitution(GamePlayer playerIn, GamePlayer playerOut)
+    {
+        // 1. 유효성 검사: 두 선수가 모두 존재하고, 같은 팀이며, 서로 다른 선수여야 함
+        if (playerIn == null || playerOut == null || playerIn.TeamId != playerOut.TeamId || playerIn == playerOut)
+        {
+            Debug.LogWarning("Invalid substitution request: Players are null, not on the same team, or the same player.");
+            return false;
+        }
+
+        // 2. 유효성 검사: 한 명은 코트에, 다른 한 명은 벤치에 있어야 함
+        if (playerIn.IsOnCourt == playerOut.IsOnCourt)
+        {
+            Debug.LogWarning("Invalid substitution request: Both players are on court or on bench.");
+            return false;
+        }
+
+        // 3. 유효성 검사: 퇴장당한 선수는 경기에 투입될 수 없음
+        if (playerIn.IsEjected)
+        {
+            Debug.LogWarning($"Invalid substitution request: {playerIn.Rating.name} is ejected.");
+            return false;
+        }
+        
+        // playerIn이 벤치 선수, playerOut이 코트 선수여야 함. 아니라면 순서를 바꿈.
+        if (playerIn.IsOnCourt)
+        {
+            var temp = playerIn;
+            playerIn = playerOut;
+            playerOut = temp;
+        }
+        
+        // 실제 교체 수행
+        PerformSubstitution(playerOut, playerIn);
+        return true;
+    }
     #endregion
 
     #region New Foul Out & Injury Logic
@@ -564,8 +609,8 @@ public class GameSimulator : MonoBehaviour, IGameSimulator
         string teamAbbreviation = "";
         if (eventOwner != null)
         {
-            // [수정] team_abbv를 PlayerRating이 아닌 CurrentState에 저장된 팀 이름에서 가져옴
-            teamAbbreviation = (eventOwner.TeamId == 0) ? CurrentState.HomeTeamName : CurrentState.AwayTeamName;
+            // [수정] team_abbv를 PlayerRating이 아닌 CurrentState에 저장된 팀 약칭에서 가져옴
+            teamAbbreviation = (eventOwner.TeamId == 0) ? CurrentState.HomeTeamAbbr : CurrentState.AwayTeamAbbr;
         }
 
         OnUILogGenerated?.Invoke($"{timeStamp} | {teamAbbreviation} | {message}");

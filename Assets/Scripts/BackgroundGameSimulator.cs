@@ -122,7 +122,10 @@ public class BackgroundGameSimulator : IGameSimulator
         }
 
         var finalPlayerStats = allPlayers
-            .Select(p => p.ExportToPlayerStat(p.Rating.player_id, CurrentState.Season, CurrentState.GameId))
+            .Select(p => {
+                string teamAbbr = p.TeamId == 0 ? gameToPlay.HomeTeamAbbr : gameToPlay.AwayTeamAbbr;
+                return p.ExportToPlayerStat(p.Rating.player_id, CurrentState.Season, CurrentState.GameId, gameToPlay.GameDate, teamAbbr);
+            })
             .ToList();
         
         return new GameResult
@@ -142,9 +145,13 @@ public class BackgroundGameSimulator : IGameSimulator
         var awayTeamInfo = LocalDbManager.Instance.GetTeam(gameInfo.AwayTeamAbbr);
         CurrentState.HomeTeamName = homeTeamInfo.team_name;
         CurrentState.AwayTeamName = awayTeamInfo.team_name;
+        // [추가] Background 시뮬레이터에서도 GameState에 팀 약칭 저장
+        CurrentState.HomeTeamAbbr = homeTeamInfo.team_abbv;
+        CurrentState.AwayTeamAbbr = awayTeamInfo.team_abbv;
         CurrentState.Season = gameInfo.Season;
         CurrentState.GameId = gameInfo.GameId;
-        
+        CurrentState.GameDate = gameInfo.GameDate;
+
         _homeTeamRoster = LocalDbManager.Instance.GetPlayersByTeam(gameInfo.HomeTeamAbbr).Select(p => new GamePlayer(p, 0)).ToList();
         _awayTeamRoster = LocalDbManager.Instance.GetPlayersByTeam(gameInfo.AwayTeamAbbr).Select(p => new GamePlayer(p, 1)).ToList();
 

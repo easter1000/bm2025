@@ -73,6 +73,7 @@ public class PlayerStat
     public string PlayerName { get; set; } // 선수 이름
     public string TeamAbbr { get; set; }   // 소속팀 약어
     public int Season { get; set; }
+    public string GameDate { get; set; } // 경기 날짜 "YYYY-MM-DD" 형식
     public string GameId { get; set; }
     public int SecondsPlayed { get; set; } // 초 단위 출전 시간
     public int Points { get; set; }
