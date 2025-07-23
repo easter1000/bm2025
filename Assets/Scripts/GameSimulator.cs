@@ -292,31 +292,24 @@ public class GameSimulator : MonoBehaviour, IGameSimulator
     private void BuildOffenseBehaviorTree()
     {
         _rootOffenseNode = new Selector(new List<Node> {
-            // 1. 샷클락이 부족할 때의 긴급 행동
             new Sequence(new List<Node> {
                 new Condition_IsShotClockLow(),
                 new Selector(new List<Node> { 
-                    new Sequence(new List<Node> { new Condition_IsOpenFor3(), new Action_TryForced3PointShot() }),
-                    new Sequence(new List<Node> { new Condition_CanDrive(), new Action_TryForcedDrive() }),
-                    new Sequence(new List<Node> { new Condition_IsGoodForMidRange(), new Action_TryForcedMidRangeShot() }),
-                    new Action_TryForced3PointShot() // 최후의 수단
+                    new Sequence(new List<Node> { new Condition_IsOpenFor3(_random), new Action_TryForced3PointShot(_random) }),
+                    new Sequence(new List<Node> { new Condition_CanDrive(_random), new Action_TryForcedDrive(_random) }),
+                    new Sequence(new List<Node> { new Condition_IsGoodForMidRange(_random), new Action_TryForcedMidRangeShot(_random) }),
+                    new Action_TryForced3PointShot(_random)
                 })
             }),
-            // 2. 일반적인 공격 상황 (득점 우선)
             new Selector(new List<Node> {
-                // 2a. 득점 시도를 가장 먼저 고려
+                new Sequence(new List<Node> { new Condition_IsGoodPassOpportunity(_random), new Action_PassToBestTeammate(_random) }),
                 new Selector(new List<Node> {
-                    new Sequence(new List<Node> { new Condition_IsOpenFor3(), new Action_Try3PointShot() }),
-                    new Sequence(new List<Node> { new Condition_CanDrive(), new Action_DriveAndFinish() }),
-                    new Sequence(new List<Node> { new Condition_IsGoodForMidRange(), new Action_TryMidRangeShot() })
+                    new Sequence(new List<Node> { new Condition_IsOpenFor3(_random), new Action_Try3PointShot(_random) }),
+                    new Sequence(new List<Node> { new Condition_CanDrive(_random), new Action_DriveAndFinish(_random) }),
+                    new Sequence(new List<Node> { new Condition_IsGoodForMidRange(_random), new Action_TryMidRangeShot(_random) })
                 }),
-                // 2b. 좋은 득점 기회가 없으면 패스를 고려
-                new Sequence(new List<Node> { 
-                    new Condition_IsGoodPassOpportunity(), 
-                    new Action_PassToBestTeammate() 
-                }),
-                // 2c. 슛도, 패스도 마땅치 않으면 마지막으로 다시 패스 시도 (고립 상황 탈출)
-                new Action_PassToBestTeammate()
+                new Sequence(new List<Node> { new Condition_IsGoodPassOpportunity(_random), new Action_PassToBestTeammate(_random) }),
+                new Action_PassToBestTeammate(_random)
             })
         });
     }
@@ -635,17 +628,10 @@ public class GameSimulator : MonoBehaviour, IGameSimulator
         defender.Stats.PersonalFouls++; // Fouls -> PersonalFouls
         if (defender.Stats.PersonalFouls >= 6)
         {
-            EjectPlayer(defender, "6 Personal Fouls");
+            EjectPlayer(defender, "fouling out");
         }
         
-        AddLog($"{defender.Rating.name} commits a shooting foul on {shooter.Rating.name}. ({defender.Stats.PersonalFouls} PF)"); // Fouls -> PersonalFouls
-        
-        shooter.Stats.FieldGoalsAttempted++;
-        if (freeThrows == 3) shooter.Stats.ThreePointersAttempted++;
-        
-        // Action_ShootFreeThrows에 _random 인스턴스 전달
-        var freeThrowAction = new Action_ShootFreeThrows(shooter, freeThrows);
-        return freeThrowAction.Evaluate(this, shooter);
+        return new Action_ShootFreeThrows(shooter, freeThrows, _random).Evaluate(this, shooter);
     }
 
     public void ResolveRebound(GamePlayer shooter)
