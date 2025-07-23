@@ -105,7 +105,38 @@ public class LocalDbManager : MonoBehaviour
         foreach (var p in playerList.players)
         {
             float currentValue = CalculatePlayerCurrentValue(p.overallAttribute, p.age, p.potential, (long)(p.contract_value / p.contract_years_left));
-            ratings.Add(new PlayerRating { /* ... PlayerRating 초기화 ... */ });
+            ratings.Add(new PlayerRating
+            {
+                player_id = p.player_id,
+                name = p.name,
+                team = p.team,
+                age = p.age,
+                position = p.position,
+                backNumber = p.backnumber.ToString(),
+                height = p.height,
+                weight = p.weight,
+                overallAttribute = p.overallAttribute,
+                currentValue = currentValue, // [수정됨] 계산된 가치 할당
+                closeShot = p.closeShot,
+                midRangeShot = p.midRangeShot,
+                threePointShot = p.threePointShot,
+                freeThrow = p.freeThrow,
+                layup = p.layup,
+                drivingDunk = p.drivingDunk,
+                drawFoul = p.drawFoul,
+                interiorDefense = p.interiorDefense,
+                perimeterDefense = p.perimeterDefense,
+                steal = p.steal,
+                block = p.block,
+                speed = p.speed,
+                stamina = p.stamina,
+                passIQ = p.passIQ,
+                ballHandle = p.ballHandle,
+                offensiveRebound = p.offensiveRebound,
+                defensiveRebound = p.defensiveRebound,
+                potential = p.potential,
+                injury = UnityEngine.Random.Range(0.01f, 0.1f)
+            });
             statuses.Add(new PlayerStatus { PlayerId = p.player_id, YearsLeft = p.contract_years_left, Salary = p.contract_value, Stamina = 100, IsInjured = false, InjuryDaysLeft = 0});
             
             long annualSalary = p.contract_years_left > 0 ? p.contract_value / p.contract_years_left : 0;
@@ -125,8 +156,44 @@ public class LocalDbManager : MonoBehaviour
         var teams = new List<Team>();
         foreach (var t in teamList.teams)
         {
-            // ... Best Five 계산 로직 ...
-            teams.Add(new Team { /* ... Team 초기화 ... */ });
+            List<int> starterIds = new List<int>();
+            var playersInTeam = ratings.Where(p => p.team == t.team_name).ToList();
+            // 이미 선발 라인업에 배정된 선수들의 ID를 추적하여 중복 배정을 방지합니다.
+            HashSet<int> selectedStarterIds = new HashSet<int>();
+            for (int pos = 1; pos <= 5; pos++)
+            {
+                int minPos = Mathf.Max(1, pos - 1);
+                int maxPos = Mathf.Min(5, pos + 1);
+
+                // 1) 먼저 정확히 해당 포지션에 맞는 후보 중 최고 OVR 선수를 찾습니다.
+                var exactMatch = playersInTeam
+                    .Where(p => p.position == pos && !selectedStarterIds.Contains(p.player_id))
+                    .OrderByDescending(p => p.overallAttribute)
+                    .FirstOrDefault();
+
+                PlayerRating chosen = exactMatch;
+
+                // 2) 정확 매칭 선수가 없으면 ±1 범위안에서 최고 OVR 선수를 선택합니다.
+                if (chosen == null)
+                {
+                    chosen = playersInTeam
+                        .Where(p => p.position >= minPos && p.position <= maxPos && !selectedStarterIds.Contains(p.player_id))
+                        .OrderByDescending(p => p.overallAttribute)
+                        .FirstOrDefault();
+                }
+
+                if (chosen != null)
+                {
+                    starterIds.Add(chosen.player_id);
+                    selectedStarterIds.Add(chosen.player_id);
+                }
+                else
+                {
+                    // 여전히 후보가 없으면 0으로 채워 빈 슬롯을 표시합니다.
+                    starterIds.Add(0);
+                }
+            }
+            teams.Add(new Team { team_id = t.team_id, team_name = t.team_name, team_abbv = t.team_abbv, conference = t.conference, division = t.division, team_color = t.team_color, team_logo = t.team_logo, best_five = string.Join(",", starterIds) });
         }
         db.InsertAll(teams);
         Debug.Log($"[DB] Populated Team with {teams.Count} teams and calculated best five.");
@@ -138,12 +205,20 @@ public class LocalDbManager : MonoBehaviour
         foreach (var teamSalaryPair in teamSalaries)
         {
             string abbr = nameToAbbr.ContainsKey(teamSalaryPair.Key) ? nameToAbbr[teamSalaryPair.Key] : teamSalaryPair.Key;
-            teamFinances.Add(new TeamFinance { /* ... TeamFinance 초기화 ... */ });
+            teamFinances.Add(new TeamFinance 
+            { 
+                TeamAbbr = abbr, 
+                Season = 2025, 
+                Standing = 0, // 초기 등수
+                Wins = 0, 
+                Losses = 0,
+                CurrentTeamSalary = teamSalaryPair.Value, 
+                TeamBudget = 200000000 
+            });
         }
         db.InsertAll(teamFinances);
         Debug.Log($"[DB] Populated TeamFinance for {teamFinances.Count} teams.");
     }
-
 
     #region Public DB Accessors
     // 모든 Public 메서드는 'using' 구문을 사용하여 스레드로부터 안전하게 DB에 접근합니다.

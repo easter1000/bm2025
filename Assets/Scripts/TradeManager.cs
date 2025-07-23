@@ -5,7 +5,25 @@ using System.Linq; // Added for .Select() and .ToList()
 
 public class TradeManager : MonoBehaviour
 {
-
+    #region Singleton
+    private static TradeManager _instance;
+    public static TradeManager Instance
+    {
+        get
+        {
+            if (_instance == null)
+            {
+                _instance = FindFirstObjectByType<TradeManager>();
+                if (_instance == null)
+                {
+                    GameObject obj = new GameObject("TradeManager");
+                    _instance = obj.AddComponent<TradeManager>();
+                }
+            }
+            return _instance;
+        }
+    }
+    #endregion
     private LocalDbManager _dbManager;
     private SeasonManager _seasonManager;
 
