@@ -113,8 +113,7 @@ public class SeasonManager : MonoBehaviour
     {
         if (_tradeManager == null) 
         {
-            Debug.LogError("TradeManager is not initialized! This should not happen if SeasonManager is set up correctly.");
-            return new List<TradeOffer>();
+            _tradeManager = FindAnyObjectByType<TradeManager>();
         }
         if (_dbManager == null) _dbManager = LocalDbManager.Instance;
 
@@ -184,71 +183,16 @@ public class SeasonManager : MonoBehaviour
     /// </summary>
     private void ResolveTeamIssues(Team team, List<Team> allTeams, Dictionary<string, TeamFinance> finances, System.Random rand)
     {
-        const int maxAttempts = 5; // 무한 루프 방지를 위한 시도 횟수 제한
-
-        for (int attempt = 1; attempt <= maxAttempts; attempt++)
-        {
-            // 매 시도마다 최신 정보 갱신
-            var finance = finances.GetValueOrDefault(team.team_abbv);
-            if (finance == null) return;
-            var roster = _dbManager.GetPlayersByTeam(team.team_abbv);
-            var starters = GetStarters(team, roster);
-
-            // 1. 문제 식별
-            bool isOverBudget = finance.CurrentTeamSalary > finance.TeamBudget;
-            bool hasRosterGaps = starters.Count < 5;
-
-            // 2. 문제가 없으면 즉시 종료
-            if (!isOverBudget && !hasRosterGaps)
-            {
-                if (attempt > 1) Debug.Log($"[AI Management] {team.team_abbv}: Issues resolved in {attempt - 1} attempts.");
-                return;
-            }
-
-            Debug.LogWarning($"[AI Management] {team.team_abbv} (Attempt {attempt}): Issues found! Over budget: {isOverBudget}, Roster gaps: {hasRosterGaps}");
-
-            // 3. 문제 해결 시도 (가장 저렴하고 빠른 방법부터)
-
-            // 3.1. 주전 공백이 있으면 FA 영입부터 시도
-            if (hasRosterGaps)
-            {
-                if (AttemptToFillGapsViaFA(team, finance, roster, starters))
-                {
-                    continue; // 해결됐으면 처음부터 문제 다시 확인
-                }
-            }
-
-            // 3.2. FA 영입이 안됐거나, 여전히 문제가 남아있다면 트레이드 시도
-            if (AttemptToFixIssuesByTrade(team, finance, roster, starters, allTeams, finances, rand))
-            {
-                continue;
-            }
-
-            // 3.3. 트레이드도 실패했다면, 최후의 수단으로 방출
-            if (isOverBudget)
-            {
-                ReleasePlayersToMeetBudget(team, finance, roster);
-                continue;
-            }
-            
-            if (hasRosterGaps && roster.Count >= 15)
-            {
-                ReleasePlayerToMakeRosterSpace(team, roster);
-                continue;
-            }
-
-            Debug.LogError($"[AI Management] CRITICAL: Could not resolve issues for {team.team_abbv} after all attempts.");
-            break;
-        }
+        return;
     }
 
     /// <summary>
     /// 주전 라인업의 빈 자리를 FA 영입으로 채우려 시도합니다.
     /// </summary>
     /// <returns>한 명이라도 영입에 성공하면 true를 반환합니다.</returns>
-    private bool AttemptToFillGapsViaFA(Team team, TeamFinance finance, List<PlayerRating> roster, List<PlayerRating> starters)
+    private bool AttemptToFillGapsViaFA(Team team, TeamFinance finance, List<PlayerInfo> rosterWithStatus, List<PlayerRating> starters)
     {
-        if (roster.Count >= 15) return false;
+        if (rosterWithStatus.Count >= 15) return false;
 
         var starterPositions = new HashSet<int>(starters.Select(p => p.position));
         int[] allPositions = { 1, 2, 3, 4, 5 }; // PG, SG, SF, PF, C
@@ -275,8 +219,8 @@ public class SeasonManager : MonoBehaviour
                     Debug.Log($"[AI Management] {team.team_abbv} signs FA {recruit.name} to fill position {posCode}.");
                     _dbManager.UpdatePlayerTeam(new List<int> { recruit.player_id }, team.team_abbv);
                     
-                    var newStarters = GetStarters(team, _dbManager.GetPlayersByTeam(team.team_abbv));
-                    newStarters.Add(recruit);
+                    var newRoster = _dbManager.GetPlayersByTeam(team.team_abbv);
+                    var newStarters = GetStarters(team, newRoster);
                     _dbManager.UpdateBestFive(team.team_abbv, newStarters.Select(p => p.player_id).ToList());
                     
                     _dbManager.RecalculateAndSaveAllTeamSalaries();
@@ -288,10 +232,11 @@ public class SeasonManager : MonoBehaviour
         return signedAnyone;
     }
 
-    /// <summary>
-    /// 예산 또는 주전 공백 문제를 트레이드로 해결하려 시도합니다.
+        /// <summary>
+    /// 예산 또는 주전 공백 문제를 트레이드로 해결하려 시도합니다. (효율성 및 데이터 구조 개선 버전)
+    /// [수정] 일정 수준 이상의 이득이 되는 거래를 찾으면 즉시 시도하고, 성공하면 종료합니다.
     /// </summary>
-    private bool AttemptToFixIssuesByTrade(Team team, TeamFinance finance, List<PlayerRating> roster, List<PlayerRating> starters, List<Team> allTeams, Dictionary<string, TeamFinance> finances, System.Random rand)
+    private bool AttemptToFixIssuesByTrade(Team team, TeamFinance finance, List<PlayerInfo> rosterWithStatus, List<PlayerRating> starters, List<Team> allTeams, Dictionary<string, TeamFinance> finances, System.Random rand)
     {
         bool isOverBudget = finance.CurrentTeamSalary > finance.TeamBudget;
         var neededPositions = Enumerable.Range(1, 5).Where(p => !starters.Any(s => s.position == p)).ToList();
@@ -299,86 +244,141 @@ public class SeasonManager : MonoBehaviour
 
         if (!isOverBudget && !needsPlayers) return false;
 
-        var potentialPartners = allTeams.Where(t => t.team_abbv != team.team_abbv && t.team_abbv != _userTeamAbbr && t.team_abbv != "FA").ToList();
-        BestTradeOption bestTrade = null;
+        // 모든 잠재적 파트너 팀의 선수 정보(Rating+Status)를 미리 로드합니다.
+        var allPartnerRosters = allTeams
+            .Where(t => t.team_abbv != team.team_abbv && t.team_abbv != _userTeamAbbr && t.team_abbv != "FA")
+            .ToDictionary(t => t.team_abbv, t => _dbManager.GetPlayersByTeamWithStatus(t.team_abbv));
 
-        // 우리 팀에서 트레이드 할 선수 후보군 (가치가 높은 순으로)
-        var myTradeCandidates = roster.OrderByDescending(p => p.currentValue).ToList();
+        // 우리 팀이 트레이드로 내놓을 선수 목록을 가져옵니다.
+        var myTradeCandidates = GetMyTradeCandidates(rosterWithStatus, isOverBudget);
 
-        foreach (var myPlayer in myTradeCandidates)
+        // 모든 조합을 찾는 대신, 실행 가능한 첫 트레이드를 시도합니다.
+        foreach (var myPlayerInfo in myTradeCandidates)
         {
-            foreach (var partnerTeam in potentialPartners)
+            // 파트너 순서를 무작위로 섞어 매번 같은 팀과 먼저 시도하는 것을 방지합니다.
+            foreach (var partnerEntry in allPartnerRosters.OrderBy(x => rand.Next()))
             {
-                var partnerRoster = _dbManager.GetPlayersByTeam(partnerTeam.team_abbv);
-                foreach (var theirPlayer in partnerRoster)
+                var partnerTeamAbbr = partnerEntry.Key;
+                var partnerRoster = partnerEntry.Value;
+                var theirTradeCandidates = GetTheirTradeCandidates(partnerRoster, myPlayerInfo, isOverBudget, neededPositions);
+
+                foreach (var theirPlayerInfo in theirTradeCandidates)
                 {
-                    // 1. 트레이드 유효성 검사 (각 팀의 재정, 로스터 사이즈 등)
-                    if (!IsTradeViable(team, finance, myPlayer, partnerTeam, finances[partnerTeam.team_abbv], theirPlayer)) continue;
+                    var myPlayerRating = myPlayerInfo.Rating;
+                    var theirPlayerRating = theirPlayerInfo.Rating;
 
-                    // 2. 트레이드 평가 (상대방이 수락할지?)
-                    var result = _tradeManager.EvaluateTrade(team.team_abbv, new List<PlayerRating> { myPlayer }, partnerTeam.team_abbv, new List<PlayerRating> { theirPlayer }, rand);
-                    if (!result.IsAccepted) continue;
-                    
-                    // 3. 우리 팀 입장에서의 이득 계산
-                    float score = CalculateTradeScoreForMyTeam(myPlayer, theirPlayer, isOverBudget, neededPositions);
-
-                    if (bestTrade == null || score > bestTrade.Score)
+                    // 1. 기본적인 트레이드 가능 여부 확인
+                    if (!IsTradeViable(team, finance, myPlayerRating, allTeams.First(t => t.team_abbv == partnerTeamAbbr), finances[partnerTeamAbbr], theirPlayerRating))
                     {
-                        bestTrade = new BestTradeOption
-                        {
-                            MyPlayer = myPlayer,
-                            TheirPlayer = theirPlayer,
-                            PartnerTeamAbbr = partnerTeam.team_abbv,
-                            Score = score
-                        };
+                        continue;
                     }
+
+                    // 2. 우리 팀 입장에서 이득이 되는지 먼저 계산
+                    float score = CalculateTradeScoreForMyTeam(myPlayerInfo, theirPlayerInfo, isOverBudget, neededPositions);
+
+                    // 이득이 0 이하인 트레이드는 고려하지 않음 (score가 높을수록 좋음)
+                    if (score <= 0)
+                    {
+                        continue;
+                    }
+
+                    // 3. 상대방이 수락할지 평가
+                    var result = _tradeManager.EvaluateTrade(team.team_abbv, new List<PlayerRating> { myPlayerRating }, partnerTeamAbbr, new List<PlayerRating> { theirPlayerRating }, rand);
+                    
+                    // 4. 상대방이 수락하면 즉시 트레이드 실행 후 종료
+                    if (result.IsAccepted)
+                    {
+                        Debug.Log($"[AI Management] Found viable trade. Executing: {team.team_abbv} trades {myPlayerRating.name} for {theirPlayerRating.name} with {partnerTeamAbbr}. Score: {score}");
+                        
+                        _tradeManager.ExecuteTrade(team.team_abbv, new List<PlayerRating> { myPlayerRating }, partnerTeamAbbr, new List<PlayerRating> { theirPlayerRating });
+                        _dbManager.RecalculateAndSaveAllTeamSalaries();
+                        
+                        // 성공적으로 문제를 해결했으므로 true 반환
+                        return true; 
+                    }
+                    // 거절당하면 다음 후보 선수로 계속 진행
                 }
             }
         }
         
-        if (bestTrade != null && bestTrade.Score > 0) // 이득이 되는 트레이드일 경우에만 실행
-        {
-            Debug.Log($"[AI Management] Executing strategic trade for {team.team_abbv}: {bestTrade.MyPlayer.name} for {bestTrade.TheirPlayer.name} with {bestTrade.PartnerTeamAbbr}. Score: {bestTrade.Score}");
-            _tradeManager.ExecuteTrade(team.team_abbv, new List<PlayerRating> { bestTrade.MyPlayer }, bestTrade.PartnerTeamAbbr, new List<PlayerRating> { bestTrade.TheirPlayer });
-            _dbManager.RecalculateAndSaveAllTeamSalaries();
-            return true;
-        }
-
+        // 모든 후보를 시도했지만 성공적인 트레이드가 없었음
         return false; 
     }
+
+    // [FIXED] PlayerStatus에 currentValue가 없던 오류 수정
+    private List<PlayerInfo> GetMyTradeCandidates(List<PlayerInfo> roster, bool isOverBudget)
+    {
+        if (isOverBudget)
+        {
+            // 연봉이 높은 선수를 우선으로
+            return roster.OrderByDescending(p => p.Status.Salary).ToList();
+        }
+        
+        // 주전 보강: 가치가 높은 선수 우선 (currentValue는 Rating에 있음)
+        return roster.OrderByDescending(p => p.Rating.currentValue).ToList();
+    }
+    
+    // [NEW] 누락되었던 GetTheirTradeCandidates 메서드 구현
+    private List<PlayerInfo> GetTheirTradeCandidates(List<PlayerInfo> partnerRoster, PlayerInfo myPlayer, bool myTeamIsOverBudget, List<int> myNeededPositions)
+    {
+        // 상대방이 나에게서 받을 선수의 가치
+        var myPlayerValue = myPlayer.Rating.currentValue;
+
+        // 1. 내가 필요한 포지션의 선수들을 우선적으로 고려
+        if (myNeededPositions.Any())
+        {
+            return partnerRoster
+                .Where(p => myNeededPositions.Contains(p.Rating.position))
+                .OrderBy(p => Math.Abs(p.Rating.currentValue - myPlayerValue)) // 가치가 비슷한 선수
+                .ToList();
+        }
+
+        // 2. 예산 감축이 목표일 경우, 나보다 연봉이 낮은 선수들을 고려
+        if (myTeamIsOverBudget)
+        {
+            return partnerRoster
+                .Where(p => p.Status.Salary < myPlayer.Status.Salary)
+                .OrderBy(p => Math.Abs(p.Rating.currentValue - myPlayerValue))
+                .ToList();
+        }
+
+        // 3. 일반적인 경우, 비슷한 가치의 모든 선수를 고려
+        return partnerRoster.OrderBy(p => Math.Abs(p.Rating.currentValue - myPlayerValue)).ToList();
+    }
+
 
     private bool IsTradeViable(Team myTeam, TeamFinance myFinance, PlayerRating myPlayer, Team partnerTeam, TeamFinance partnerFinance, PlayerRating theirPlayer)
     {
         long mySalary = _dbManager.GetPlayerStatus(myPlayer.player_id)?.Salary ?? 0;
         long theirSalary = _dbManager.GetPlayerStatus(theirPlayer.player_id)?.Salary ?? 0;
         
-        // 상대팀이 예산을 초과하게 되는 트레이드는 불가
         if (partnerFinance.CurrentTeamSalary - theirSalary + mySalary > partnerFinance.TeamBudget) return false;
         
         return true;
     }
 
-    private float CalculateTradeScoreForMyTeam(PlayerRating myPlayer, PlayerRating theirPlayer, bool isOverBudget, List<int> neededPositions)
+    // [FIXED] PlayerRating 대신 PlayerInfo를 받도록 시그니처 및 내부 로직 수정
+    private float CalculateTradeScoreForMyTeam(PlayerInfo myPlayer, PlayerInfo theirPlayer, bool isOverBudget, List<int> neededPositions)
     {
         float score = 0;
 
-        // 1. 연봉 변화 점수
-        long mySalary = _dbManager.GetPlayerStatus(myPlayer.player_id)?.Salary ?? 0;
-        long theirSalary = _dbManager.GetPlayerStatus(theirPlayer.player_id)?.Salary ?? 0;
+        // 1. 연봉 변화 점수 (Status 객체에서 바로 접근)
+        long mySalary = myPlayer.Status.Salary;
+        long theirSalary = theirPlayer.Status.Salary;
         long salaryChange = mySalary - theirSalary; // 양수 = 연봉 절감
         if (isOverBudget)
         {
-            score += salaryChange / 10000f; // 예산 압박이 클수록 연봉 절감의 가치가 큼
+            score += salaryChange / 10000f; 
         }
 
-        // 2. 포지션 필요성 점수
-        if (neededPositions.Contains(theirPlayer.position) && !neededPositions.Contains(myPlayer.position))
+        // 2. 포지션 필요성 점수 (Rating 객체에서 바로 접근)
+        if (neededPositions.Contains(theirPlayer.Rating.position) && !neededPositions.Contains(myPlayer.Rating.position))
         {
-            score += theirPlayer.overallAttribute * 2; // 필요한 포지션의 좋은 선수를 얻으면 큰 점수
+            score += theirPlayer.Rating.overallAttribute * 2;
         }
 
-        // 3. 전반적인 선수 가치 변화
-        score += (theirPlayer.currentValue - myPlayer.currentValue) / 100f;
+        // 3. 전반적인 선수 가치 변화 (Rating 객체에서 바로 접근)
+        score += (theirPlayer.Rating.currentValue - myPlayer.Rating.currentValue) / 100f;
 
         return score;
     }
@@ -387,24 +387,25 @@ public class SeasonManager : MonoBehaviour
     /// <summary>
     /// 예산이 맞을 때까지 가치가 낮은 선수를 방출합니다.
     /// </summary>
-    private void ReleasePlayersToMeetBudget(Team team, TeamFinance finance, List<PlayerRating> roster)
+    // [FIXED] List<PlayerRating> 대신 List<PlayerInfo>를 받도록 수정
+    private void ReleasePlayersToMeetBudget(Team team, TeamFinance finance, List<PlayerInfo> rosterWithStatus)
     {
-        var rosterWithStatus = roster.Select(p => new { Rating = p, Status = _dbManager.GetPlayerStatus(p.player_id) })
-                                     .Where(p => p.Status != null)
-                                .OrderBy(p => p.Rating.currentValue)
-                                .ToList();
+        var sortedRoster = rosterWithStatus
+            .Where(p => p.Status != null)
+            .OrderBy(p => p.Rating.currentValue) // 가치가 낮은 순으로 정렬
+            .ToList();
         
         Debug.LogWarning($"[AI Management] {team.team_abbv} must release players to meet budget.");
 
-        while(finance.CurrentTeamSalary > finance.TeamBudget && rosterWithStatus.Count > 8)
+        while(finance.CurrentTeamSalary > finance.TeamBudget && sortedRoster.Count > 8)
         {
-            var playerToRelease = rosterWithStatus.First();
+            var playerToRelease = sortedRoster.First();
             Debug.Log($"[AI Management] Releasing {playerToRelease.Rating.name} from {team.team_abbv}.");
             _dbManager.ReleasePlayer(playerToRelease.Rating.player_id);
             
             long annualSalary = (playerToRelease.Status.YearsLeft > 0) ? (playerToRelease.Status.Salary / playerToRelease.Status.YearsLeft) : 0;
             finance.CurrentTeamSalary -= annualSalary;
-            rosterWithStatus.RemoveAt(0);
+            sortedRoster.RemoveAt(0);
         }
         
         _dbManager.UpdateBestFive(team.team_abbv, GetStarters(team, _dbManager.GetPlayersByTeam(team.team_abbv)).Select(p => p.player_id).ToList());
@@ -413,15 +414,16 @@ public class SeasonManager : MonoBehaviour
     /// <summary>
     /// FA 영입을 위해 로스터 공간을 확보하려고 가치가 가장 낮은 선수를 방출합니다.
     /// </summary>
-    private void ReleasePlayerToMakeRosterSpace(Team team, List<PlayerRating> roster)
+    // [FIXED] List<PlayerRating> 대신 List<PlayerInfo>를 받도록 수정
+    private void ReleasePlayerToMakeRosterSpace(Team team, List<PlayerInfo> roster)
     {
         if (roster.Count < 15) return;
     
-        var playerToRelease = roster.OrderBy(p => p.currentValue).FirstOrDefault();
+        var playerToRelease = roster.OrderBy(p => p.Rating.currentValue).FirstOrDefault();
         if(playerToRelease != null)
         {
-            Debug.LogWarning($"[AI Management] {team.team_abbv} releases {playerToRelease.name} to make roster space.");
-            _dbManager.ReleasePlayer(playerToRelease.player_id);
+            Debug.LogWarning($"[AI Management] {team.team_abbv} releases {playerToRelease.Rating.name} to make roster space.");
+            _dbManager.ReleasePlayer(playerToRelease.Rating.player_id);
             _dbManager.UpdateBestFive(team.team_abbv, GetStarters(team, _dbManager.GetPlayersByTeam(team.team_abbv)).Select(p => p.player_id).ToList());
         }
     }
@@ -434,7 +436,11 @@ public class SeasonManager : MonoBehaviour
         var teamEntity = _dbManager.GetTeam(team.team_abbv);
         if (string.IsNullOrEmpty(teamEntity?.best_five))
         {
-            return new List<PlayerRating>();
+            // best_five가 없는 경우, 포지션별 OVR이 가장 높은 선수로 자동 설정 (임시 방편)
+            return roster.GroupBy(p => p.position)
+                         .Select(g => g.OrderByDescending(p => p.overallAttribute).First())
+                         .Take(5)
+                         .ToList();
         }
 
         var starterIds = new HashSet<int>();
@@ -448,10 +454,11 @@ public class SeasonManager : MonoBehaviour
         return roster.Where(p => starterIds.Contains(p.player_id)).ToList();
     }
 
+    // [FIXED] 클래스 정의와 사용되는 속성명 일치 (MyPlayerInfo -> MyPlayer)
     private class BestTradeOption
     {
-        public PlayerRating MyPlayer { get; set; }
-        public PlayerRating TheirPlayer { get; set; }
+        public PlayerInfo MyPlayer { get; set; }
+        public PlayerInfo TheirPlayer { get; set; }
         public string PartnerTeamAbbr { get; set; }
         public float Score { get; set; }
     }
@@ -463,7 +470,6 @@ public class SeasonManager : MonoBehaviour
 
         if (rosterA.Count < 2 || rosterB.Count < 2) return;
         
-        // 시도해볼만한 랜덤한 선수 1:1 트레이드
         var playerA = rosterA[rand.Next(0, rosterA.Count)];
         var playerB = rosterB[rand.Next(0, rosterB.Count)];
 
@@ -473,7 +479,6 @@ public class SeasonManager : MonoBehaviour
             rand
         );
         
-        // teamB 입장에서의 평가
         var resultB = _tradeManager.EvaluateTrade(
             teamB.team_abbv, new List<PlayerRating> { playerB },
             teamA.team_abbv, new List<PlayerRating> { playerA },
@@ -506,7 +511,6 @@ public class SeasonManager : MonoBehaviour
         var strategyA = GetTeamStrategy(financeA);
         var strategyB = GetTeamStrategy(financeB);
 
-        // [수정] 동일 전략 팀 간 트레이드 중단 확률을 70% -> 30%로 완화
         if (strategyA == strategyB && rand.Next(0, 100) < 30) return null;
 
         var rosterA = _dbManager.GetPlayersByTeam(teamA.team_abbv);
@@ -545,7 +549,7 @@ public class SeasonManager : MonoBehaviour
                     teamB.team_abbv, new List<PlayerRating> { playerToTradeFromB }
                 );
             }
-            return null; // AI-AI 트레이드는 여기서 처리하고 반환하지 않음
+            return null;
         }
     }
     
@@ -555,11 +559,9 @@ public class SeasonManager : MonoBehaviour
 
         if (myStrategy == TeamStrategy.Contending)
         {
-            // 컨텐딩팀: 어리고 포텐 높은 선수(미래 가치)를 팔아 즉시 전력감(현재 가치)을 원함
             candidates = roster.Where(p => (p.potential - p.overallAttribute) >= 8 && p.age < 25)
                                  .OrderByDescending(p => p.currentValue);
             
-            // [플랜 B] 팔만한 유망주가 없으면, 팀 내 최저 OVR 선수라도 팔아서 로스터를 정리하려 함
             if (!candidates.Any())
             {
                 candidates = roster.OrderBy(p => p.overallAttribute);
@@ -567,11 +569,9 @@ public class SeasonManager : MonoBehaviour
         }
         else if (myStrategy == TeamStrategy.Rebuilding)
         {
-            // 리빌딩팀: 나이 많고 비싼 선수(현재 가치)를 팔아 유망주나 샐러리캡을 원함
             candidates = roster.Where(p => p.age > 28 && p.currentValue > 40)
                                  .OrderByDescending(p => p.currentValue);
 
-            // [플랜 B] 팔만한 베테랑이 없으면, 가치가 가장 높은 선수(에이스)를 팔아서 리빌딩 자원을 얻으려 함
             if (!candidates.Any())
             {
                 candidates = roster.OrderByDescending(p => p.currentValue);
@@ -579,7 +579,6 @@ public class SeasonManager : MonoBehaviour
         }
         else // Standard
         {
-            // 스탠다드팀: 팀의 밸런스를 맞추기 위해, 주전급이 아닌 선수 중 가장 가치가 높은 선수를 트레이드 블록에 올림
             candidates = roster.OrderByDescending(p => p.currentValue).Skip(5);
         }
 

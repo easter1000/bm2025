@@ -361,9 +361,6 @@ public class SeasonSceneManager : MonoBehaviour
             case 2: // 경기 기록
                 ShowOnlyPanel(recordPlayPanel);
                 break;
-            case 3: // 트레이드 기록
-                ShowOnlyPanel(recordTradePanel);
-                break;
         }
     }
 
@@ -401,7 +398,7 @@ public class SeasonSceneManager : MonoBehaviour
         if (recordDropdown == null) return;
 
         recordDropdown.ClearOptions();
-        recordDropdown.AddOptions(new List<string> { "기록 선택...", "리그 순위", "경기 기록", "트레이드 기록" });
+        recordDropdown.AddOptions(new List<string> { "기록 선택...", "리그 순위", "경기 기록" });
          
         // placeholder index 0
         recordDropdown.SetValueWithoutNotify(0); 
