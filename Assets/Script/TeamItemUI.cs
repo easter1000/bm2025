@@ -41,9 +41,11 @@ public class TeamItemUI : MonoBehaviour
 
     private TeamData teamData;
     private Action<TeamData> onClickCallback;
+    public event Action<PlayerLine> OnPlayerLineClicked;
 
     private static readonly Color RowColorEven = new Color32(0xF2, 0xF2, 0xF2, 0xFF); // 짝수 행
     private static readonly Color RowColorOdd  = new Color32(0xE5, 0xE5, 0xE5, 0xFF); // 홀수 행
+    private static readonly Color InjuredColor = new Color32(255, 163, 163, 255); // 부상 선수 배경색
 
     // 선택된 PlayerLine에 표시되는 하이라이트(검은색 테두리)
     private GameObject highlightedPlayerObj;
@@ -119,6 +121,9 @@ public class TeamItemUI : MonoBehaviour
 
             // 하이라이트 람다 추가 (중복 가능성 낮음)
             plc.OnClicked += (pl) => UpdatePlayerHighlight(plc.gameObject);
+            
+            // 외부로 선수 클릭 이벤트를 전달하는 람다 추가
+            plc.OnClicked += (pl) => OnPlayerLineClicked?.Invoke(pl);
         }
 
         for (int idx = 0; idx < starterCtrls.Length; idx++)
@@ -144,7 +149,7 @@ public class TeamItemUI : MonoBehaviour
             starters.Remove(pl);
 
             // 반대 순서 색: index 0 -> Odd, 1 -> Even, ...
-            Color bg = (idx % 2 == 0) ? RowColorOdd : RowColorEven;
+            Color bg = pl.IsInjured ? InjuredColor : ((idx % 2 == 0) ? RowColorOdd : RowColorEven);
             ctrl.SetPlayerLine(pl, bg);
 
             RegisterClick(ctrl);
@@ -159,7 +164,7 @@ public class TeamItemUI : MonoBehaviour
 
             var pl = starters[0];
             starters.RemoveAt(0);
-            Color bg = (idx % 2 == 0) ? RowColorOdd : RowColorEven;
+            Color bg = pl.IsInjured ? InjuredColor : ((idx % 2 == 0) ? RowColorOdd : RowColorEven);
             ctrl.SetPlayerLine(pl, bg);
             RegisterClick(ctrl);
         }
@@ -214,8 +219,9 @@ public class TeamItemUI : MonoBehaviour
                 le.minWidth = 842f;
                 le.flexibleWidth = 0f;
 
-                Color bgColor = (i % 2 == 0) ? RowColorEven : RowColorOdd;
-                plc.SetPlayerLine(benchPlayers[i], bgColor);
+                PlayerLine benchPlayer = benchPlayers[i];
+                Color bgColor = benchPlayer.IsInjured ? InjuredColor : ((i % 2 == 0) ? RowColorEven : RowColorOdd);
+                plc.SetPlayerLine(benchPlayer, bgColor);
                 RegisterClick(plc);
             }
         }
@@ -232,8 +238,10 @@ public class TeamItemUI : MonoBehaviour
         // 초기 상세 정보: 첫 번째 주전 선수를 표시
         if (playerDetailUI != null && starterCtrls.Length > 0 && starterCtrls[0] != null && starterCtrls[0].Data != null)
         {
-            ShowPlayerDetail(starterCtrls[0].Data);
+            PlayerLine firstStarter = starterCtrls[0].Data;
+            ShowPlayerDetail(firstStarter);
             UpdatePlayerHighlight(starterCtrls[0].gameObject);
+            OnPlayerLineClicked?.Invoke(firstStarter); // 최초 선택 선수 정보를 외부로 전달
         }
 
         void ShowPlayerDetail(PlayerLine pl)

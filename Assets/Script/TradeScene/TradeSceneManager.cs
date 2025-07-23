@@ -152,7 +152,13 @@ public class TradeSceneManager : MonoBehaviour
 
         if (players == null) return;
 
-        foreach (var pr in players.OrderByDescending(p => p.overallAttribute))
+        // 부상당하지 않은 선수만 필터링
+        var healthyPlayers = players.Where(p => {
+            var status = LocalDbManager.Instance.GetPlayerStatus(p.player_id);
+            return status != null && !status.IsInjured;
+        }).OrderByDescending(p => p.overallAttribute);
+
+        foreach (var pr in healthyPlayers)
         {
             GameObject go = Instantiate(playerTradeLinePrefab, content);
             go.transform.localScale = Vector3.one;
