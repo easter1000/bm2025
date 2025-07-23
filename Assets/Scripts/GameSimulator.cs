@@ -318,7 +318,9 @@ public class GameSimulator : MonoBehaviour, IGameSimulator
                 // 2. 좋은 슛 기회가 없으면 패스 시도
                 new Sequence(new List<Node> { new Condition_IsGoodPassOpportunity(_random), new Action_PassToBestTeammate(_random) }),
                 // 3. 최후의 수단으로 패스
-                new Action_PassToBestTeammate(_random)
+                new Action_PassToBestTeammate(_random),
+                // 4. 어떤 행동도 할 수 없을 때 강제 턴오버
+                new Action_ForceTurnover()
             })
         });
     }
@@ -377,38 +379,36 @@ public class GameSimulator : MonoBehaviour, IGameSimulator
 
     private void ProcessTeamSubstitutions(List<GamePlayer> teamRoster)
     {
-        bool substitutionMade;
-        do
+        // 무한 루프를 방지하기 위해 do-while을 제거하고, 가장 시급한 선수 1명만 교체하도록 로직 변경.
+        
+        // 1. 코트 위의 선수 중 가장 교체가 시급한 선수 1명을 찾음 (가장 지쳤거나, 가장 비효율적인 선수)
+        var playerOut = teamRoster
+            .Where(p => p.IsOnCourt && !p.IsEjected)
+            .OrderBy(p => p.CurrentStamina) // 1순위: 가장 지친 선수
+            .FirstOrDefault(p => {
+                var bestSub = FindBestSubstitute(teamRoster, p, false);
+                // 조건: 스태미나가 임계치 미만이거나, 벤치 선수보다 실질 OVR이 5 이상 낮은 경우
+                return p.CurrentStamina < staminaSubOutThreshold || 
+                        (bestSub != null && p.EffectiveOverall < bestSub.EffectiveOverall - 5);
+            });
+
+        if (playerOut != null)
         {
-            substitutionMade = false;
-
-            // 코트 위의 선수 중 가장 교체가 시급한 선수 1명을 찾음 (가장 지쳤거나, 가장 비효율적인 선수)
-            var playerOut = teamRoster
-                .Where(p => p.IsOnCourt && !p.IsEjected)
-                .OrderBy(p => p.CurrentStamina) // 1순위: 가장 지친 선수
-                .FirstOrDefault(p => {
-                    var bestSub = FindBestSubstitute(teamRoster, p, false);
-                    // 조건: 스태미나가 임계치 미만이거나, 벤치 선수보다 실질 OVR이 5 이상 낮은 경우
-                    return p.CurrentStamina < staminaSubOutThreshold || 
-                           (bestSub != null && p.EffectiveOverall < bestSub.EffectiveOverall - 5);
-                });
-
-            if (playerOut != null)
+            // 2. 해당 선수를 위한 최적의 교체 선수를 찾음
+            var bestAvailableSub = FindBestSubstitute(teamRoster, playerOut, true);
+            
+            // 스태미나가 높은 후보가 없지만, 현재 선수가 너무 지쳤다면(15 미만) 스태미나 상관없이 교체
+            if (bestAvailableSub == null && playerOut.CurrentStamina < 15f)
             {
-                // 해당 선수를 위한 최적의 교체 선수를 찾음
-                var bestAvailableSub = FindBestSubstitute(teamRoster, playerOut, true);
-                if (bestAvailableSub == null && playerOut.CurrentStamina < 15f)
-                {
-                    bestAvailableSub = FindBestSubstitute(teamRoster, playerOut, false);
-                }
-
-                if (bestAvailableSub != null)
-                {
-                    PerformSubstitution(playerOut, bestAvailableSub);
-                    substitutionMade = true; // 교체가 이루어졌으므로, 팀 상태를 다시 처음부터 체크하기 위해 루프를 반복
-                }
+                bestAvailableSub = FindBestSubstitute(teamRoster, playerOut, false);
             }
-        } while (substitutionMade); // 교체가 한 번이라도 발생했다면, 추가 교체가 필요한지 다시 검사
+
+            // 3. 교체할 선수를 찾았다면 교체 수행
+            if (bestAvailableSub != null)
+            {
+                PerformSubstitution(playerOut, bestAvailableSub);
+            }
+        }
     }
 
     private GamePlayer FindBestSubstitute(List<GamePlayer> roster, GamePlayer playerOut, bool requireHighStamina)

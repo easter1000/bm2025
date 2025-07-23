@@ -13,12 +13,7 @@ public class TradeManager : MonoBehaviour
         {
             if (_instance == null)
             {
-                _instance = FindFirstObjectByType<TradeManager>();
-                if (_instance == null)
-                {
-                    GameObject obj = new GameObject("TradeManager");
-                    _instance = obj.AddComponent<TradeManager>();
-                }
+                Debug.LogWarning("TradeManager instance is called before it is initialized (Awake).");
             }
             return _instance;
         }
@@ -29,6 +24,14 @@ public class TradeManager : MonoBehaviour
 
     void Awake()
     {
+        if (_instance != null && _instance != this)
+        {
+            Destroy(gameObject);
+            return;
+        }
+        _instance = this;
+        DontDestroyOnLoad(gameObject); // 씬 전환 시 파괴되지 않도록 설정
+
         _dbManager = LocalDbManager.Instance;
         _seasonManager = SeasonManager.Instance;
     }

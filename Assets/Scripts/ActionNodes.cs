@@ -70,7 +70,7 @@ public class Condition_IsOpenFor3 : Node
     public Condition_IsOpenFor3(System.Random random) { _random = random; }
     public override NodeState Evaluate(IGameSimulator sim, GamePlayer player)
     {
-        float tendency = 20 + (player.Rating.threePointShot - 70) * 2.0f;
+        float tendency = 15 + (player.Rating.threePointShot - 70) * 2.0f;
         return (_random.NextDouble() * 100) < tendency ? NodeState.SUCCESS : NodeState.FAILURE;
     }
 }
@@ -81,7 +81,7 @@ public class Condition_CanDrive : Node
     public Condition_CanDrive(System.Random random) { _random = random; }
     public override NodeState Evaluate(IGameSimulator sim, GamePlayer player)
     {
-        float tendency = 20 + (player.Rating.drivingDunk + player.Rating.layup - 140) * 1.5f;
+        float tendency = 15 + (player.Rating.drivingDunk + player.Rating.layup - 140) * 1.5f;
         return (_random.NextDouble() * 100) < tendency ? NodeState.SUCCESS : NodeState.FAILURE;
     }
 }
@@ -92,7 +92,7 @@ public class Condition_IsGoodForMidRange : Node
     public Condition_IsGoodForMidRange(System.Random random) { _random = random; }
     public override NodeState Evaluate(IGameSimulator sim, GamePlayer player)
     {
-        float tendency = 20 + (player.Rating.midRangeShot - 65) * 2.0f;
+        float tendency = 12 + (player.Rating.midRangeShot - 65) * 2.0f;
         return (_random.NextDouble() * 100) < tendency ? NodeState.SUCCESS : NodeState.FAILURE;
     }
 }
@@ -125,8 +125,8 @@ public class Action_Try3PointShot : Node
         float successChance = 40 + (adjustedRating.threePointShot * 0.5f);
         if (defender != null)
         {
-            successChance -= adjustedDefender.perimeterDefense * 0.35f;
-            successChance -= adjustedDefender.speed * 0.05f;
+            successChance -= adjustedDefender.perimeterDefense * 0.4f;
+            successChance -= adjustedDefender.speed * 0.1f;
         }
 
         bool madeShot = (_random.NextDouble() * 100) < successChance;
@@ -173,7 +173,7 @@ public class Action_TryForced3PointShot : Node
         var adjustedDefender = game.GetAdjustedRating(defender);
         
         float successChance = 25 + adjustedRating.threePointShot * 0.4f;
-        if(defender != null) successChance -= adjustedDefender.perimeterDefense * 0.3f;
+        if(defender != null) successChance -= adjustedDefender.perimeterDefense * 0.4f;
 
         bool madeShot = (_random.NextDouble() * 100) < successChance;
         game.ConsumeTime((float)(_random.NextDouble() * (4-2)+2));
@@ -310,7 +310,7 @@ public class Action_DriveAndFinish : Node
         }
 
         float successChance = 55 + adjustedRating.layup * 0.5f + adjustedRating.drivingDunk * 0.1f;
-        if(defender != null) successChance -= adjustedDefender.interiorDefense * 0.35f;
+        if(defender != null) successChance -= adjustedDefender.interiorDefense * 0.4f;
 
         bool madeShot = (_random.NextDouble() * 100) < successChance;
         game.ConsumeTime((float)(_random.NextDouble() * (8-4)+4));
@@ -367,7 +367,7 @@ public class Action_TryForcedDrive : Node
         }
 
         float successChance = 40 + adjustedRating.layup * 0.4f + adjustedRating.drivingDunk * 0.05f;
-        if(defender != null) successChance -= adjustedDefender.interiorDefense * 0.3f;
+        if(defender != null) successChance -= adjustedDefender.interiorDefense * 0.4f;
 
         bool madeShot = (_random.NextDouble() * 100) < successChance;
         game.ConsumeTime((float)(_random.NextDouble() * (7-3)+3));
@@ -413,7 +413,7 @@ public class Action_PassToBestTeammate : Node
     public override NodeState Evaluate(IGameSimulator game, GamePlayer player)
     {
         var teammates = game.GetPlayersOnCourt(player.TeamId).Where(p => p.Rating.player_id != player.Rating.player_id).ToList();
-        if (teammates.Count == 0) return NodeState.FAILURE;
+        if (teammates.Count == 0) return NodeState.FAILURE; // 코트에 혼자일 경우 실패 반환
 
         GamePlayer bestTarget = null;
         float bestScore = -1f;
@@ -455,6 +455,19 @@ public class Action_PassToBestTeammate : Node
             game.CurrentState.PotentialAssister = player;
             game.AddUILog($"{player.Rating.name} passes to {bestTarget.Rating.name}.", player);
         }
+        return NodeState.SUCCESS;
+    }
+}
+
+/// <summary>
+/// 어떤 공격 옵션도 선택할 수 없을 때 강제로 턴오버를 발생시키는 최후의 수단 노드.
+/// </summary>
+public class Action_ForceTurnover : Node
+{
+    public override NodeState Evaluate(IGameSimulator sim, GamePlayer player)
+    {
+        sim.AddUILog($"{player.Rating.name} couldn't find an option and commits a turnover.", player);
+        sim.ResolveTurnover(player, null, false);
         return NodeState.SUCCESS;
     }
 }

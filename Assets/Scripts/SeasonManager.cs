@@ -111,10 +111,8 @@ public class SeasonManager : MonoBehaviour
     /// <returns>유저에게 제안된 TradeOffer 리스트</returns>
     public List<TradeOffer> AttemptAiToAiTrades()
     {
-        if (_tradeManager == null)
-        {
-            _tradeManager = TradeManager.Instance;
-        }
+        // 안전장치: 씬 전환 등으로 TradeManager 참조를 잃었을 경우 다시 찾아옴
+        if (_tradeManager == null) _tradeManager = TradeManager.Instance;
         if (_dbManager == null) _dbManager = LocalDbManager.Instance;
 
         _userTeamAbbr = _dbManager.GetUser()?.SelectedTeamAbbr;

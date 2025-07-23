@@ -204,7 +204,8 @@ public class BackgroundGameSimulator : IGameSimulator
                     new Sequence(new List<Node> { new Condition_IsGoodForMidRange(_random), new Action_TryMidRangeShot(_random) })
                 }),
                 new Sequence(new List<Node> { new Condition_IsGoodPassOpportunity(_random), new Action_PassToBestTeammate(_random) }),
-                new Action_PassToBestTeammate(_random)
+                new Action_PassToBestTeammate(_random),
+                new Action_ForceTurnover()
             })
         });
     }
@@ -272,40 +273,31 @@ public class BackgroundGameSimulator : IGameSimulator
 
     private void ProcessTeamSubstitutions(List<GamePlayer> teamRoster)
     {
-        // 무한 루프를 방지하기 위해 최대 5번까지만 교체를 시도하는 for 루프로 변경
-        const int maxSubstitutionsPerCheck = 5; 
-        for (int i = 0; i < maxSubstitutionsPerCheck; i++)
+        // 무한 루프를 방지하기 위해 최대 5번까지만 교체를 시도하는 for 루프로 변경 -> 가장 시급한 1명만 교체하는 로직으로 변경
+        var playerOut = teamRoster
+            .Where(p => p.IsOnCourt && !p.IsEjected)
+            .OrderBy(p => p.CurrentStamina)
+            .FirstOrDefault(p => {
+                var bestSub = FindBestSubstitute(teamRoster, p, false);
+                return p.CurrentStamina < staminaSubOutThreshold || 
+                        (bestSub != null && p.EffectiveOverall < bestSub.EffectiveOverall - 5);
+            });
+
+        // 교체할 선수가 더 이상 없으면 루프 종료
+        if (playerOut == null)
         {
-            var playerOut = teamRoster
-                .Where(p => p.IsOnCourt && !p.IsEjected)
-                .OrderBy(p => p.CurrentStamina)
-                .FirstOrDefault(p => {
-                    var bestSub = FindBestSubstitute(teamRoster, p, false);
-                    return p.CurrentStamina < staminaSubOutThreshold || 
-                           (bestSub != null && p.EffectiveOverall < bestSub.EffectiveOverall - 5);
-                });
+            return;
+        }
 
-            // 교체할 선수가 더 이상 없으면 루프 종료
-            if (playerOut == null)
-            {
-                break;
-            }
+        var bestAvailableSub = FindBestSubstitute(teamRoster, playerOut, true);
+        if (bestAvailableSub == null && playerOut.CurrentStamina < 15f)
+        {
+            bestAvailableSub = FindBestSubstitute(teamRoster, playerOut, false);
+        }
 
-            var bestAvailableSub = FindBestSubstitute(teamRoster, playerOut, true);
-            if (bestAvailableSub == null && playerOut.CurrentStamina < 15f)
-            {
-                bestAvailableSub = FindBestSubstitute(teamRoster, playerOut, false);
-            }
-
-            if (bestAvailableSub != null)
-            {
-                PerformSubstitution(playerOut, bestAvailableSub);
-            }
-            else
-            {
-                // 교체할 선수는 찾았지만 마땅한 후보가 없으면 더 이상 진행하지 않음
-                break;
-            }
+        if (bestAvailableSub != null)
+        {
+            PerformSubstitution(playerOut, bestAvailableSub);
         }
     }
     
