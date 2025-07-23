@@ -27,10 +27,11 @@ public class GameSimulator : MonoBehaviour, IGameSimulator
     public GameState CurrentState { get; private set; } // GamaData.cs의 GameState 사용 
     
     // GamePlayer, GameState는 GamaData.cs의 것을 사용하므로 이벤트 타입 변경
-    public static event Action<GameState> OnGameStateUpdated;
-    public static event Action<GamePlayer, GamePlayer> OnPlayerSubstituted;
-    public static event Action<string> OnUILogGenerated; // UI 표시용 로그 이벤트
+    public event Action<GameState> OnGameStateUpdated;
+    public event Action<GamePlayer, GamePlayer> OnPlayerSubstituted;
+    public event Action<string, GamePlayer> OnUILogGenerated; // UI 표시용 로그 이벤트
 
+    // IGameSimulator 인터페이스 구현
     public bool IsUserTeamAutoSubbed { get; set; } = false; // [추가] 유저팀 자동 교체 여부
     private int _userTeamId = -1; // [추가] 0=홈, 1=어웨이, -1=AI vs AI
 
@@ -45,6 +46,7 @@ public class GameSimulator : MonoBehaviour, IGameSimulator
     private float _timeUntilNextPossession = 0f;
     private float _timeUntilNextSubCheck = 0f;
     private float _timeUntilNextInjuryCheck = 30f; // [추가] 다음 부상 체크까지 남은 게임 시간
+    // IGameSimulator 인터페이스 구현
     public int GetUserTeamId() => _userTeamId; // [추가] 유저 팀 ID를 반환하는 public 메서드
     void Awake()
     {
@@ -452,6 +454,7 @@ public class GameSimulator : MonoBehaviour, IGameSimulator
     /// <summary>
     /// [추가] UI로부터 수동 교체 요청을 처리하는 메서드
     /// </summary>
+    // IGameSimulator 인터페이스 구현
     public bool RequestManualSubstitution(GamePlayer playerIn, GamePlayer playerOut)
     {
         // 1. 유효성 검사: 두 선수가 모두 존재하고, 같은 팀이며, 서로 다른 선수여야 함
@@ -613,7 +616,7 @@ public class GameSimulator : MonoBehaviour, IGameSimulator
             teamAbbreviation = (eventOwner.TeamId == 0) ? CurrentState.HomeTeamAbbr : CurrentState.AwayTeamAbbr;
         }
 
-        OnUILogGenerated?.Invoke($"{timeStamp} | {teamAbbreviation} | {message}");
+        OnUILogGenerated?.Invoke($"{timeStamp} | {teamAbbreviation} | {message}", eventOwner);
     }
 
     public GamePlayer GetRandomDefender(int attackingTeamId)

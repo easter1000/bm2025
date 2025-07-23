@@ -6,6 +6,13 @@ using System;
 
 public class BackgroundGameSimulator : IGameSimulator
 {
+    public event Action<GameState> OnGameStateUpdated;
+    public event Action<GamePlayer, GamePlayer> OnPlayerSubstituted;
+    public event Action<string, GamePlayer> OnUILogGenerated;
+    public bool IsUserTeamAutoSubbed { get; set; } = true;
+    public int GetUserTeamId() => -1;
+    public bool RequestManualSubstitution(GamePlayer playerIn, GamePlayer playerOut) => false;
+
     public GameState CurrentState { get; private set; } // 인터페이스 구현을 위해 public 속성으로 변경
     private List<GamePlayer> _homeTeamRoster; // GamaData.cs의 GamePlayer
     private List<GamePlayer> _awayTeamRoster; // GamaData.cs의 GamePlayer
@@ -81,7 +88,6 @@ public class BackgroundGameSimulator : IGameSimulator
                         CheckForSubstitutions();
                         _timeUntilNextSubCheck = substitutionCheckInterval;
                     }
-
                 }
 
                 // 샷클락 바이얼레이션 (공격이 끝나지 않았는데 샷클락이 0이 된 경우)
