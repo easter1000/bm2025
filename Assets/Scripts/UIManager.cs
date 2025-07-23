@@ -40,13 +40,12 @@ public class UIManager : MonoBehaviour
     public Transform homeBenchPanel; // [추가] 홈팀 벤치 패널
     public Transform awayBenchPanel; // [추가] 어웨이팀 벤치 패널
 
-    [Header("Auto-Sub Toggle")]
-    public Toggle autoSubToggle;
-    public Animator autoSubToggleAnimator; // 토글 애니메이터
-    public GameObject autoSubText;       // "AUTO" 텍스트 GameObject
+    // [Header("UI References - Auto Sub")]
+    // [SerializeField] private Toggle autoSubToggle;
+    // [SerializeField] private Animator autoSubToggleAnimator;
+    // [SerializeField] private GameObject autoSubText;
 
-    [Header("Game Simulator")]
-    [SerializeField] private GameSimulator gameSimulator;
+    private IGameSimulator gameSimulator;
 
     [Header("Court & Puck References")]
     public PlayerPuck playerPuckPrefab; // [추가] 프리팹 변수 복구
@@ -54,6 +53,7 @@ public class UIManager : MonoBehaviour
     private Dictionary<int, PlayerPuck> _playerPucks = new Dictionary<int, PlayerPuck>();
     private Dictionary<string, Color> _teamColors = new Dictionary<string, Color>();
     private int _userTeamId = -1; // [추가]
+    private Toggle autoSubToggle;
 
     void Awake()
     {
@@ -66,83 +66,60 @@ public class UIManager : MonoBehaviour
             Destroy(gameObject);
         }
         
-        InitializeTeamColors();
-
-        // [추가]
-        if (gameSimulator != null)
-        {
-            _userTeamId = gameSimulator.GetUserTeamId(); // GameSimulator로부터 유저 팀 ID 가져오기
-        }
-
-        if (autoSubToggle != null)
-        {
-            autoSubToggle.onValueChanged.AddListener(OnAutoSubToggleChanged);
-        }
-    }
-
-    void Start()
-    {
-        // gameSimulator가 Inspector에서 할당되지 않은 경우에만 찾도록 수정
+        gameSimulator = FindFirstObjectByType<GameSimulator>();
         if (gameSimulator == null)
         {
-            gameSimulator = FindFirstObjectByType<GameSimulator>();
-            if (gameSimulator == null)
-            {
-                Debug.LogError("UIManager cannot find GameSimulator!");
-            }
+            Debug.LogError("UIManager cannot find GameSimulator!");
+            return; // 시뮬레이터가 없으면 더 이상 진행하지 않음
         }
 
-        // Auto Sub Toggle 초기 설정
+        InitializeTeamColors();
+
+        _userTeamId = gameSimulator.GetUserTeamId(); // GameSimulator로부터 유저 팀 ID 가져오기
+
+        // 토글 리스너 연결 및 초기화
+        autoSubToggle = FindObjectsByType<Toggle>(FindObjectsSortMode.None).FirstOrDefault(t => t.name == "AutoSubToggle");
         if (autoSubToggle != null)
         {
-            // Animator 컴포넌트 자동 할당
-            if (autoSubToggleAnimator == null)
-            {
-                autoSubToggleAnimator = autoSubToggle.GetComponent<Animator>();
-            }
+            autoSubToggle.onValueChanged.RemoveAllListeners(); // 기존 리스너 제거
             autoSubToggle.onValueChanged.AddListener(OnAutoSubToggleChanged);
             // 초기 상태 반영
             OnAutoSubToggleChanged(autoSubToggle.isOn);
         }
     }
 
+    void Start()
+    {
+        // Awake에서 필요한 초기화가 모두 수행되었으므로 Start는 비워둡니다.
+    }
+
     void OnEnable()
     {
-        GameSimulator.OnGameStateUpdated += UpdateScoreboard;
-        GameSimulator.OnPlayerSubstituted += UpdatePlayerPuck;
-        GameSimulator.OnUILogGenerated += HandleUILog; // 새로 추가
+        if (gameSimulator != null)
+        {
+            gameSimulator.OnGameStateUpdated += UpdateScoreboard;
+            gameSimulator.OnPlayerSubstituted += UpdatePlayerPuck;
+            gameSimulator.OnUILogGenerated += HandleUILog;
+        }
     }
 
     void OnDisable()
     {
-        GameSimulator.OnGameStateUpdated -= UpdateScoreboard;
-        GameSimulator.OnPlayerSubstituted -= UpdatePlayerPuck;
-        GameSimulator.OnUILogGenerated -= HandleUILog; // 새로 추가
+        if (gameSimulator != null)
+        {
+            gameSimulator.OnGameStateUpdated -= UpdateScoreboard;
+            gameSimulator.OnPlayerSubstituted -= UpdatePlayerPuck;
+            gameSimulator.OnUILogGenerated -= HandleUILog;
+        }
     }
     
-    private void OnAutoSubToggleChanged(bool isOn)
+    public void OnAutoSubToggleChanged(bool isOn)
     {
-        if (gameSimulator == null)
-        {
-            gameSimulator = FindObjectOfType<GameSimulator>();
-        }
-
         if (gameSimulator != null)
         {
             gameSimulator.IsUserTeamAutoSubbed = isOn;
         }
-
-        // 애니메이터 파라미터 설정
-        if (autoSubToggleAnimator != null)
-        {
-            autoSubToggleAnimator.SetBool("IsOn", isOn);
-        }
-
-        // AUTO 텍스트 활성화/비활성화
-        if (autoSubText != null)
-        {
-            autoSubText.SetActive(isOn);
-        }
+        Debug.Log($"Auto-Sub toggled to: {isOn}");
     }
 
     // [추가] PlayerPuck이 호출할 수 있도록 GetUserTeamId 메서드 추가
@@ -355,7 +332,7 @@ public class UIManager : MonoBehaviour
     }
 
     // OnEnable/OnDisable에서 등록/해제할 이벤트 핸들러
-    private void HandleUILog(string message)
+    private void HandleUILog(string message, GamePlayer eventOwner)
     {
         if (gameLogUI != null)
         {

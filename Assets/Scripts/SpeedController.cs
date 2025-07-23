@@ -27,7 +27,7 @@ public class SpeedController : MonoBehaviour
         gameSimulator = FindFirstObjectByType<GameSimulator>();
         if (gameSimulator != null)
         {
-            GameSimulator.OnGameStateUpdated += UpdateUI;
+            gameSimulator.OnGameStateUpdated += UpdateUI;
         }
 
         if (speedText != null)
@@ -64,7 +64,7 @@ public class SpeedController : MonoBehaviour
         // 이벤트 구독 해제
         if (gameSimulator != null)
         {
-            GameSimulator.OnGameStateUpdated -= UpdateUI;
+            gameSimulator.OnGameStateUpdated -= UpdateUI;
         }
     }
 
@@ -106,7 +106,7 @@ public class SpeedController : MonoBehaviour
     {
         if (this == null)
         {
-            if (gameSimulator != null) GameSimulator.OnGameStateUpdated -= UpdateUI;
+            if (gameSimulator != null) gameSimulator.OnGameStateUpdated -= UpdateUI;
             return;
         }
         
