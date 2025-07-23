@@ -36,7 +36,11 @@ public class UIManager : MonoBehaviour
     public GameLogUI gameLogUI; // 새로 추가
 
     [Header("Auto-Sub Toggle")]
-    [SerializeField] private Toggle autoSubToggle;
+    public Toggle autoSubToggle;
+    public Animator autoSubToggleAnimator; // 토글 애니메이터
+    public GameObject autoSubText;       // "AUTO" 텍스트 GameObject
+
+    [Header("Game Simulator")]
     [SerializeField] private GameSimulator gameSimulator;
 
     [Header("Court & Puck References")]
@@ -77,6 +81,19 @@ public class UIManager : MonoBehaviour
                 Debug.LogError("UIManager cannot find GameSimulator!");
             }
         }
+
+        // Auto Sub Toggle 초기 설정
+        if (autoSubToggle != null)
+        {
+            // Animator 컴포넌트 자동 할당
+            if (autoSubToggleAnimator == null)
+            {
+                autoSubToggleAnimator = autoSubToggle.GetComponent<Animator>();
+            }
+            autoSubToggle.onValueChanged.AddListener(OnAutoSubToggleChanged);
+            // 초기 상태 반영
+            OnAutoSubToggleChanged(autoSubToggle.isOn);
+        }
     }
 
     void OnEnable()
@@ -103,6 +120,18 @@ public class UIManager : MonoBehaviour
         if (gameSimulator != null)
         {
             gameSimulator.IsUserTeamAutoSubbed = isOn;
+        }
+
+        // 애니메이터 파라미터 설정
+        if (autoSubToggleAnimator != null)
+        {
+            autoSubToggleAnimator.SetBool("IsOn", isOn);
+        }
+
+        // AUTO 텍스트 활성화/비활성화
+        if (autoSubText != null)
+        {
+            autoSubText.SetActive(isOn);
         }
     }
 
@@ -159,6 +188,7 @@ public class UIManager : MonoBehaviour
             awayTeamBackground.color = color;
         }
     }
+    
 
     public void SetTeamNames(string homeName, string awayName)
     {
