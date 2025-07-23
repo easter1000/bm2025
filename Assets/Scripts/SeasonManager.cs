@@ -37,9 +37,6 @@ public class SeasonManager : MonoBehaviour
     // private float _dayTimer = 0f; // 더 이상 사용하지 않음
     private string _userTeamAbbr; // 유저 팀 약어 저장
 
-    // AI가 유저에게 트레이드를 제안할 때 발생하는 이벤트
-    public static event Action<TradeOffer> OnTradeOfferedToUser;
-
     void Awake()
     {
         if (_instance != null && _instance != this)
@@ -112,26 +109,30 @@ public class SeasonManager : MonoBehaviour
     }
 
     /// <summary>
-    /// AI 팀들이 서로 트레이드를 시도하도록 하는 함수
+    /// AI 팀들이 서로 트레이드를 시도하고, 유저에게 제안할 트레이드 목록을 반환.
     /// </summary>
-    public void AttemptAiToAiTrades()
+    /// <returns>유저에게 제안된 TradeOffer 리스트</returns>
+    public List<TradeOffer> AttemptAiToAiTrades()
     {
         if (_tradeManager == null) 
         {
             Debug.LogError("TradeManager is not initialized!");
             _tradeManager = FindAnyObjectByType<TradeManager>();
-            if (_tradeManager == null) return;
+            if (_tradeManager == null) return new List<TradeOffer>();
         }
         if (_dbManager == null) _dbManager = LocalDbManager.Instance;
 
         _userTeamAbbr = _dbManager.GetUser()?.SelectedTeamAbbr;
         _currentSeason = _dbManager.GetUser()?.CurrentSeason ?? DateTime.Now.Year;
 
+        var userTradeOffers = new List<TradeOffer>();
         List<Team> allTeams = _dbManager.GetAllTeams();
         var teamFinances = _dbManager.GetTeamFinancesForSeason(_currentSeason)
                                      .ToDictionary(f => f.TeamAbbr);
         
         List<Team> aiTeams = allTeams.Where(t => t.team_abbv != _userTeamAbbr && t.team_abbv != "FA").ToList();
+
+        var rand = new System.Random();
 
         // 1. 예산 초과 팀 강제 구조조정
         foreach (var team in aiTeams)
@@ -154,9 +155,9 @@ public class SeasonManager : MonoBehaviour
         {
             for (int j = i + 1; j < aiTeams.Count; j++)
             {
-                if (UnityEngine.Random.Range(0, 100) < 5) // 5% 확률로 트레이드 시도
+                if (rand.Next(0, 100) < 5) // 5% 확률로 트레이드 시도
                 {
-                    ProposeFairTradeBetweenTeams(aiTeams[i], aiTeams[j], teamFinances);
+                    ProposeFairTradeBetweenTeams(aiTeams[i], aiTeams[j], teamFinances, rand);
                 }
             }
         }
@@ -167,19 +168,17 @@ public class SeasonManager : MonoBehaviour
         {
             foreach (var aiTeam in aiTeams)
             {
-                if (UnityEngine.Random.Range(0, 1000) < 15) // 1.5% 확률
+                if (rand.Next(0, 1000) < 15) // 1.5% 확률
                 {
-                    // 이 부분은 GenerateAndProposeSmartTrade를 재활용하거나 새 로직을 만들어야 함
-                    ProposeTradeToUser(aiTeam, userTeam, teamFinances);
+                    var offer = GenerateAndProposeSmartTrade(aiTeam, teamFinances[aiTeam.team_abbv], userTeam, teamFinances[userTeam.team_abbv], rand, true);
+                    if (offer != null)
+                    {
+                        userTradeOffers.Add(offer);
+                    }
                 }
             }
         }
-    }
-
-    private void ProposeTradeToUser(Team aiTeam, Team userTeam, Dictionary<string, TeamFinance> finances)
-    {
-        // 기존의 스마트 트레이드 제안 로직을 그대로 활용
-        GenerateAndProposeSmartTrade(aiTeam, finances[aiTeam.team_abbv], userTeam, finances[userTeam.team_abbv], true);
+        return userTradeOffers;
     }
 
     private bool AttemptSalaryCapTrade(Team overBudgetTeam, Dictionary<string, TeamFinance> finances)
@@ -194,6 +193,7 @@ public class SeasonManager : MonoBehaviour
                                         .ToList();
         
         BestTradeOption bestTrade = null;
+        var rand = new System.Random(); // 트레이드 평가를 위한 랜덤 인스턴스
 
         foreach (var myPlayerInfo in sortedRoster)
         {
@@ -215,7 +215,8 @@ public class SeasonManager : MonoBehaviour
                     
                     var result = _tradeManager.EvaluateTrade(
                         overBudgetTeam.team_abbv, new List<PlayerRating> { myPlayerInfo.Rating },
-                        partnerTeam.team_abbv, new List<PlayerRating> { theirPlayerInfo.Rating }
+                        partnerTeam.team_abbv, new List<PlayerRating> { theirPlayerInfo.Rating },
+                        rand
                     );
 
                     if (result.IsAccepted && (bestTrade == null || salaryChange < bestTrade.SalaryChange))
@@ -287,7 +288,7 @@ public class SeasonManager : MonoBehaviour
         }
     }
 
-    private void ProposeFairTradeBetweenTeams(Team teamA, Team teamB, Dictionary<string, TeamFinance> finances)
+    private void ProposeFairTradeBetweenTeams(Team teamA, Team teamB, Dictionary<string, TeamFinance> finances, System.Random rand)
     {
         var rosterA = _dbManager.GetPlayersByTeam(teamA.team_abbv).OrderByDescending(p => p.currentValue).ToList();
         var rosterB = _dbManager.GetPlayersByTeam(teamB.team_abbv).OrderByDescending(p => p.currentValue).ToList();
@@ -295,18 +296,20 @@ public class SeasonManager : MonoBehaviour
         if (rosterA.Count < 2 || rosterB.Count < 2) return;
         
         // 시도해볼만한 랜덤한 선수 1:1 트레이드
-        var playerA = rosterA[UnityEngine.Random.Range(0, rosterA.Count)];
-        var playerB = rosterB[UnityEngine.Random.Range(0, rosterB.Count)];
+        var playerA = rosterA[rand.Next(0, rosterA.Count)];
+        var playerB = rosterB[rand.Next(0, rosterB.Count)];
 
         var resultA = _tradeManager.EvaluateTrade(
             teamA.team_abbv, new List<PlayerRating> { playerA },
-            teamB.team_abbv, new List<PlayerRating> { playerB }
+            teamB.team_abbv, new List<PlayerRating> { playerB },
+            rand
         );
         
         // teamB 입장에서의 평가
         var resultB = _tradeManager.EvaluateTrade(
             teamB.team_abbv, new List<PlayerRating> { playerB },
-            teamA.team_abbv, new List<PlayerRating> { playerA }
+            teamA.team_abbv, new List<PlayerRating> { playerA },
+            rand
         );
 
         if (resultA.IsAccepted && resultB.IsAccepted)
@@ -319,63 +322,52 @@ public class SeasonManager : MonoBehaviour
         }
     }
 
-
-    private void ProposeTradeBetweenTeams(Team teamA, Team teamB, Dictionary<string, TeamFinance> finances, bool isUserTeamInvolved = false)
-    {
-        var financeA = finances.ContainsKey(teamA.team_abbv) ? finances[teamA.team_abbv] : null;
-        var financeB = finances.ContainsKey(teamB.team_abbv) ? finances[teamB.team_abbv] : null;
-
-        if (financeA != null && financeB != null)
-        {
-            GenerateAndProposeSmartTrade(teamA, financeA, teamB, financeB, isUserTeamInvolved);
-        }
-    }
-    
     private enum TeamStrategy { Rebuilding, Contending, Standard }
 
     private TeamStrategy GetTeamStrategy(TeamFinance finance)
     {
-        float winPercentage = (finance.Wins + finance.Losses) == 0 ? 0.5f : (float)finance.Wins / (finance.Wins + finance.Losses);
+        if (finance == null || (finance.Wins + finance.Losses == 0)) return TeamStrategy.Standard;
+        float winPercentage = (float)finance.Wins / (finance.Wins + finance.Losses);
         if (winPercentage > 0.65) return TeamStrategy.Contending;
         if (winPercentage < 0.35) return TeamStrategy.Rebuilding;
         return TeamStrategy.Standard;
     }
     
-    private void GenerateAndProposeSmartTrade(Team teamA, TeamFinance financeA, Team teamB, TeamFinance financeB, bool isUserTeamInvolved = false)
+    private TradeOffer GenerateAndProposeSmartTrade(Team teamA, TeamFinance financeA, Team teamB, TeamFinance financeB, System.Random rand, bool isUserTeamInvolved = false)
     {
         var strategyA = GetTeamStrategy(financeA);
         var strategyB = GetTeamStrategy(financeB);
 
         // [수정] 동일 전략 팀 간 트레이드 중단 확률을 70% -> 30%로 완화
-        if (strategyA == strategyB && UnityEngine.Random.Range(0, 100) < 30) return;
+        if (strategyA == strategyB && rand.Next(0, 100) < 30) return null;
 
         var rosterA = _dbManager.GetPlayersByTeam(teamA.team_abbv);
         var rosterB = _dbManager.GetPlayersByTeam(teamB.team_abbv);
 
-        if (rosterA.Count < 8 || rosterB.Count < 8) return;
+        if (rosterA.Count < 8 || rosterB.Count < 8) return null;
 
         PlayerRating playerToTradeFromA = FindTradableAsset(rosterA, strategyA, strategyB);
         PlayerRating playerToTradeFromB = FindTradableAsset(rosterB, strategyB, strategyA);
 
-        if (playerToTradeFromA == null || playerToTradeFromB == null) return;
+        if (playerToTradeFromA == null || playerToTradeFromB == null) return null;
         
+        var offer = new TradeOffer(
+            teamA, new List<PlayerRating> { playerToTradeFromA },
+            teamB, new List<PlayerRating> { playerToTradeFromB }
+        );
+
         if (isUserTeamInvolved)
         {
-            // [수정] UI 팝업을 띄우기 위해 이벤트를 발생시킴
-            var offer = new TradeOffer(
-                teamA, new List<PlayerRating> { playerToTradeFromA },
-                teamB, new List<PlayerRating> { playerToTradeFromB }
-            );
-            OnTradeOfferedToUser?.Invoke(offer);
-
             Debug.Log($"[USER TRADE PROPOSAL] {teamA.team_abbv} offers {playerToTradeFromA.name} for {teamB.team_abbv}'s {playerToTradeFromB.name}");
+            return offer;
         }
         else
         {
             Debug.Log($"[AI-AI Trade Proposal] {teamA.team_abbv} ({strategyA}) -> {teamB.team_abbv} ({strategyB})");
             var result = _tradeManager.EvaluateTrade(
                 teamA.team_abbv, new List<PlayerRating> { playerToTradeFromA },
-                teamB.team_abbv, new List<PlayerRating> { playerToTradeFromB }
+                teamB.team_abbv, new List<PlayerRating> { playerToTradeFromB },
+                rand
             );
 
             if (result.IsAccepted)
@@ -385,6 +377,7 @@ public class SeasonManager : MonoBehaviour
                     teamB.team_abbv, new List<PlayerRating> { playerToTradeFromB }
                 );
             }
+            return null; // AI-AI 트레이드는 여기서 처리하고 반환하지 않음
         }
     }
     

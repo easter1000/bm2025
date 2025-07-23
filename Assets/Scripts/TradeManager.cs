@@ -34,33 +34,29 @@ public class TradeManager : MonoBehaviour
     /// </returns>
     public TradeEvaluationResult EvaluateTrade(
         string proposingTeamAbbr, List<PlayerRating> offeredPlayers,
-        string targetTeamAbbr, List<PlayerRating> requestedPlayers)
+        string targetTeamAbbr, List<PlayerRating> requestedPlayers, System.Random rand)
     {
         int currentSeason = _seasonManager.GetCurrentSeason();
         var targetTeamFinance = _dbManager.GetTeamFinance(targetTeamAbbr, currentSeason);
         
         long offeredSalary = CalculateTotalSalary(offeredPlayers);
         long requestedSalary = CalculateTotalSalary(requestedPlayers);
-        Debug.Log($"[TradeEval] OfferedPlayers Salary: ${offeredSalary:N0}, RequestedPlayers Salary: ${requestedSalary:N0}");
-        
+
         var targetTeamRoster = _dbManager.GetPlayersByTeam(targetTeamAbbr);
 
         // 1. 팀 필요성 분석
         float positionValueBonus = AnalyzeTeamNeeds(targetTeamRoster, offeredPlayers, requestedPlayers);
-        Debug.Log($"[TradeEval] Position Value Bonus: ${positionValueBonus:N0}");
 
         // 2. 최종 가치 평가
         float offeredValue = offeredPlayers.Sum(p => p.currentValue);
         float requestedValue = requestedPlayers.Sum(p => p.currentValue);
         float finalOfferedValue = offeredValue + positionValueBonus;
-        Debug.Log($"[TradeEval] OfferedValue: ${offeredValue:N0}, RequestedValue: ${requestedValue:N0}, FinalOfferedValue (with bonus): ${finalOfferedValue:N0}");
-        
+
         // 리빌딩 팀은 더 많은 가치를 요구하고, 컨텐딩 팀은 약간의 손해를 감수할 수 있음
         // TODO: SeasonManager로부터 팀 전략(Rebuilding/Contending)을 받아와서 적용
-        float requiredRatio = Random.Range(0.95f, 1.2f); // 상대가 요구하는 가치의 범위
+        float requiredRatio = (float)(rand.NextDouble() * (1.2 - 0.95) + 0.95); // Random.Range(0.95f, 1.2f)
         float adjustedRequestedValue = requestedValue * requiredRatio;
         float valueDifference = finalOfferedValue - adjustedRequestedValue;
-        Debug.Log($"[TradeEval] RequiredRatio: {requiredRatio:F2}, AdjustedRequestedValue: ${adjustedRequestedValue:N0}, ValueDifference: ${valueDifference:N0}");
 
         // 손해보는 거래: 차액을 현금으로 요구
         long requiredCash = (long)Mathf.Abs(valueDifference);
@@ -73,7 +69,6 @@ public class TradeManager : MonoBehaviour
         };
 
         long newTeamSalary = CalculateTotalSalary(targetTeamRoster) - requestedSalary + offeredSalary;
-        Debug.Log($"[TradeEval] {targetTeamAbbr} newTeamSalary after trade: ${newTeamSalary:N0} (Cap: ${targetTeamFinance.TeamBudget:N0})");
         if (newTeamSalary > targetTeamFinance.TeamBudget + requiredCash)
         {
             Debug.Log($"[Trade Rejected] Financials: {targetTeamAbbr} would exceed salary cap.");
@@ -122,12 +117,8 @@ public class TradeManager : MonoBehaviour
                 potentialStrength = (float)(potentialPlayersInPos.Sum(p => (p.currentValue / 10000) * (p.currentValue / 10000)) / (float)Mathf.Pow(potentialPlayersInPos.Count() + 3, 1.5f));
             }
 
-            Debug.Log($"[TradeEval] i: {i}, CurrentStrength: {currentStrength}, PotentialStrength: {potentialStrength}");
-
             bonus += (potentialStrength - currentStrength) * 10;
         }
-
-        Debug.Log($"[TradeEval] Bonus: {bonus}");
 
         return bonus;
     }
@@ -155,4 +146,4 @@ public class TradeManager : MonoBehaviour
         foreach(var p in playersFromA) Debug.Log($"  - {p.name} -> {teamB_Abbr}");
         foreach(var p in playersFromB) Debug.Log($"  - {p.name} -> {teamA_Abbr}");
     }
-} 
+}

@@ -8,6 +8,8 @@ using System;
 // IGameSimulator 인터페이스 구현
 public class GameSimulator : MonoBehaviour, IGameSimulator
 {
+    public static GameSimulator Instance { get; private set; }
+
     // GameResult는 이제 GamaData.cs의 공용 타입을 사용합니다.
     public static event Action<GameResult> OnGameFinished; 
 
@@ -37,13 +39,18 @@ public class GameSimulator : MonoBehaviour, IGameSimulator
     
     private List<GameLogEntry> _gameLog = new List<GameLogEntry>(); // GamaData.cs의 GameLogEntry 사용
     private Node _rootOffenseNode;
+    private System.Random _random; // System.Random 인스턴스 추가
     private enum SimStatus { Initializing, Running, Finished }
     private SimStatus _status = SimStatus.Initializing;
     private float _timeUntilNextPossession = 0f;
     private float _timeUntilNextSubCheck = 0f;
     private float _timeUntilNextInjuryCheck = 30f; // [추가] 다음 부상 체크까지 남은 게임 시간
-
     public int GetUserTeamId() => _userTeamId; // [추가] 유저 팀 ID를 반환하는 public 메서드
+    void Awake()
+    {
+        Instance = this;
+        _random = new System.Random(); // Awake에서 초기화
+    }
 
     void Start()
     {
@@ -288,21 +295,21 @@ public class GameSimulator : MonoBehaviour, IGameSimulator
             new Sequence(new List<Node> {
                 new Condition_IsShotClockLow(),
                 new Selector(new List<Node> { 
-                    new Sequence(new List<Node> { new Condition_IsOpenFor3(), new Action_TryForced3PointShot() }),
-                    new Sequence(new List<Node> { new Condition_CanDrive(), new Action_TryForcedDrive() }),
-                    new Sequence(new List<Node> { new Condition_IsGoodForMidRange(), new Action_TryForcedMidRangeShot() }),
-                    new Action_TryForced3PointShot()
+                    new Sequence(new List<Node> { new Condition_IsOpenFor3(_random), new Action_TryForced3PointShot(_random) }),
+                    new Sequence(new List<Node> { new Condition_CanDrive(_random), new Action_TryForcedDrive(_random) }),
+                    new Sequence(new List<Node> { new Condition_IsGoodForMidRange(_random), new Action_TryForcedMidRangeShot(_random) }),
+                    new Action_TryForced3PointShot(_random)
                 })
             }),
             new Selector(new List<Node> {
-                new Sequence(new List<Node> { new Condition_IsGoodPassOpportunity(), new Action_PassToBestTeammate() }),
+                new Sequence(new List<Node> { new Condition_IsGoodPassOpportunity(_random), new Action_PassToBestTeammate(_random) }),
                 new Selector(new List<Node> {
-                    new Sequence(new List<Node> { new Condition_IsOpenFor3(), new Action_Try3PointShot() }),
-                    new Sequence(new List<Node> { new Condition_CanDrive(), new Action_DriveAndFinish() }),
-                    new Sequence(new List<Node> { new Condition_IsGoodForMidRange(), new Action_TryMidRangeShot() })
+                    new Sequence(new List<Node> { new Condition_IsOpenFor3(_random), new Action_Try3PointShot(_random) }),
+                    new Sequence(new List<Node> { new Condition_CanDrive(_random), new Action_DriveAndFinish(_random) }),
+                    new Sequence(new List<Node> { new Condition_IsGoodForMidRange(_random), new Action_TryMidRangeShot(_random) })
                 }),
-                new Sequence(new List<Node> { new Condition_IsGoodPassOpportunity(), new Action_PassToBestTeammate() }),
-                new Action_PassToBestTeammate()
+                new Sequence(new List<Node> { new Condition_IsGoodPassOpportunity(_random), new Action_PassToBestTeammate(_random) }),
+                new Action_PassToBestTeammate(_random)
             })
         });
     }
@@ -629,7 +636,8 @@ public class GameSimulator : MonoBehaviour, IGameSimulator
         shooter.Stats.FieldGoalsAttempted++;
         if (freeThrows == 3) shooter.Stats.ThreePointersAttempted++;
         
-        var freeThrowAction = new Action_ShootFreeThrows(shooter, freeThrows);
+        // Action_ShootFreeThrows에 _random 인스턴스 전달
+        var freeThrowAction = new Action_ShootFreeThrows(shooter, freeThrows, _random);
         return freeThrowAction.Evaluate(this, shooter);
     }
 
